@@ -276,7 +276,7 @@ app.post('/api/evaluate',
   authenticateUser,
   upload.fields([
     { name: 'audio', maxCount: 1 },
-    { name: 'images', maxCount: 5 }
+    { name: 'images', maxCount: 15 }
   ]),
   async (req: Request, res: Response) => {
     const startTime = Date.now();
