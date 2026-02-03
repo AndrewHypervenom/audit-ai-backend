@@ -1,7 +1,7 @@
 {
   "name": "audit-ai-backend",
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Backend API for Audit AI System",
   "main": "dist/server.js",
   "scripts": {
