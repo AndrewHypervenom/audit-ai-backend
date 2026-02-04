@@ -21,7 +21,6 @@ import { authenticateUser, requireAdmin } from './middleware/auth.middleware.js'
 import { supabase, supabaseAdmin } from './config/supabase.js';
 import { progressBroadcaster } from './services/progress-broadcaster.js';
 import type { AuditInput } from './types/index.js';
-// ⭐ NUEVO: Importar el router de stats
 import statsRoutes from './routes/stats.routes.js';
 
 const app = express();
@@ -80,12 +79,12 @@ const allowedOrigins = [
   'https://audit-ai-gamma.vercel.app',
   'http://localhost:5173',
   'http://localhost:5174',
+  'https://auditoria-kappa.vercel.app',
   process.env.CORS_ORIGIN
 ].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Permitir requests sin origin (como mobile apps o curl)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.includes(origin)) {
@@ -117,16 +116,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ============================================
-// ⭐ REGISTRAR ROUTER DE STATS (NUEVO)
-// ============================================
+// Registrar router de stats
 app.use('/api/audits', statsRoutes);
 
 // ============================================
 // AUTH ENDPOINTS
 // ============================================
 
-// POST /api/auth/signup - DESHABILITADO
 app.post('/api/auth/signup', (req: Request, res: Response) => {
   res.status(403).json({ 
     error: 'Registro deshabilitado. Contacte al administrador para crear una cuenta.',
@@ -134,7 +130,6 @@ app.post('/api/auth/signup', (req: Request, res: Response) => {
   });
 });
 
-// POST /api/auth/login
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -163,7 +158,6 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/auth/logout
 app.post('/api/auth/logout', authenticateUser, async (req: Request, res: Response) => {
   try {
     const { error } = await supabase.auth.signOut();
@@ -180,7 +174,6 @@ app.post('/api/auth/logout', authenticateUser, async (req: Request, res: Respons
   }
 });
 
-// GET /api/auth/me
 app.get('/api/auth/me', authenticateUser, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -213,7 +206,7 @@ app.get('/api/progress/:clientId', (req: Request, res: Response) => {
 });
 
 // ============================================
-// AUDIT ENDPOINTS (PROTEGIDOS)
+// AUDIT ENDPOINTS
 // ============================================
 
 app.get('/api/audits', authenticateUser, async (req: Request, res: Response) => {
@@ -271,7 +264,7 @@ app.get('/api/audits/:auditId', authenticateUser, async (req: Request, res: Resp
   }
 });
 
-// POST /api/evaluate - Crear nueva auditoría (endpoint para procesamiento completo)
+// POST /api/evaluate - Crear nueva auditoría
 app.post('/api/evaluate', 
   authenticateUser,
   upload.fields([
@@ -282,7 +275,6 @@ app.post('/api/evaluate',
     const startTime = Date.now();
     let auditId: string | null = null;
     
-    // ⚠️ IMPORTANTE: Este clientId es el sseClientId para SSE, NO el clientId del cliente
     const sseClientId = req.body.sseClientId || uuidv4();
 
     try {
@@ -308,12 +300,11 @@ app.post('/api/evaluate',
         images: imageFiles.length
       });
 
-      // ⭐ CORREGIDO: Extraer metadata del body con los nombres correctos
       const metadata: AuditInput = {
         executiveName: req.body.executiveName || '',
         executiveId: req.body.executiveId || '',
         callType: req.body.callType || '',
-        clientId: req.body.clientId || '', // ⭐ Este es el ID del cliente REAL
+        clientId: req.body.clientId || '',
         callDate: req.body.callDate || new Date().toISOString().split('T')[0],
         callDuration: req.body.callDuration || null,
         audioPath: audioFile.path,
@@ -323,9 +314,8 @@ app.post('/api/evaluate',
       logger.info('📋 Audit metadata:', metadata);
 
       // 1. Crear entrada en la base de datos
-      progressBroadcaster.progress(sseClientId, 'transcription', 25, 'Iniciando transcripción...');
+      progressBroadcaster.progress(sseClientId, 'upload', 10, 'Archivos subidos correctamente');
 
-      // ⭐ CORREGIDO: Usar el nuevo formato de parámetros
       auditId = await databaseService.createAudit({
         userId: req.user!.id,
         auditInput: metadata,
@@ -335,13 +325,103 @@ app.post('/api/evaluate',
 
       logger.success('✅ Audit record created', { auditId });
 
-      // Aquí continúa el resto del procesamiento...
-      // (El código del procesamiento de transcripción, análisis, etc. permanece igual)
+      // 2. Transcribir audio - ✅ CORREGIDO
+      progressBroadcaster.progress(sseClientId, 'transcription', 25, 'Iniciando transcripción...');
       
+      const transcription = await assemblyAIService.transcribe(audioFile.path);
+
+      logger.success('✅ Transcription completed', { 
+        duration: transcription.audio_duration,
+        words: transcription.words?.length 
+      });
+
+      // 3. Analizar imágenes con OpenAI - ✅ CORREGIDO
+      progressBroadcaster.progress(sseClientId, 'analysis', 50, 'Analizando imágenes...');
+
+      const imageAnalyses = imageFiles.length > 0 
+        ? await openAIService.analyzeMultipleImages(imageFiles.map(f => f.path))
+        : [];
+
+      const imageAnalysis = imageAnalyses.length > 0
+        ? imageAnalyses.map(img => `${img.system}: ${JSON.stringify(img.data)}`).join('\n\n')
+        : 'No se proporcionaron imágenes para analizar';
+
+      logger.success('✅ Image analysis completed');
+
+      // 4. Evaluar con criterios - ✅ CORREGIDO
+      progressBroadcaster.progress(sseClientId, 'evaluation', 75, 'Evaluando con IA...');
+
+      const evaluation = await evaluatorService.evaluate(
+        metadata,
+        transcription,
+        imageAnalyses
+      );
+
+      logger.success('✅ Evaluation completed', {
+        totalScore: evaluation.totalScore,
+        maxPossibleScore: evaluation.maxPossibleScore,
+        percentage: evaluation.percentage
+      });
+
+      // 5. Generar Excel - ✅ CORREGIDO
+      progressBroadcaster.progress(sseClientId, 'excel', 90, 'Generando reporte Excel...');
+
+      const excelFilename = `auditoria_${metadata.executiveId}_${Date.now()}.xlsx`;
+      const excelPath = path.join(resultsDir, excelFilename);
+
+      await excelService.generateExcelReport(metadata, evaluation);
+
+      logger.success('✅ Excel report generated', { filename: excelFilename });
+
+      // 6. Calcular costos - ✅ CORREGIDO
+      const costs = costCalculatorService.calculateTotalCost(
+        transcription.audio_duration || 0,
+        imageFiles.length,
+        0,
+        0,
+        evaluation.usage?.inputTokens || 0,
+        evaluation.usage?.outputTokens || 0
+      );
+
+      logger.info('💰 Costs calculated:', costs);
+
+      // 7. Actualizar en base de datos
+      await databaseService.completeAudit(auditId, {
+        transcription: transcription.text,
+        transcriptionWords: transcription.words,
+        imageAnalysis: imageAnalysis,
+        evaluation,
+        excelPath: excelFilename,
+        processingTimeMs: Date.now() - startTime,
+        costs
+      });
+
+      logger.success('✅ Audit completed successfully', {
+        auditId,
+        totalTime: `${((Date.now() - startTime) / 1000).toFixed(2)}s`,
+        totalCost: `$${costs.totalCost.toFixed(4)}`
+      });
+
+      // 8. Enviar progreso final
+      progressBroadcaster.progress(sseClientId, 'completed', 100, '¡Auditoría completada!');
+
+      // Registrar actividad
+      await databaseService.logAuditActivity(
+        auditId,
+        req.user!.id,
+        'created',
+        null,
+        req.ip,
+        req.headers['user-agent']
+      );
+
+      // Responder con el ID
       res.json({
         success: true,
-        message: 'Procesamiento iniciado',
-        auditId
+        auditId,
+        excelUrl: `/results/${excelFilename}`,
+        processingTime: Date.now() - startTime,
+        costs
       });
 
     } catch (error: any) {
@@ -351,7 +431,7 @@ app.post('/api/evaluate',
         await databaseService.markAuditError(auditId, error.message);
       }
 
-      progressBroadcaster.progress(sseClientId, 'analysis', 50, 'Analizando imágenes...');
+      progressBroadcaster.progress(sseClientId, 'error', 0, `Error: ${error.message}`);
 
       res.status(500).json({ 
         error: 'Error procesando auditoría', 
@@ -362,14 +442,12 @@ app.post('/api/evaluate',
   }
 );
 
-// DELETE /api/audits/:auditId - Eliminar auditoría
 app.delete('/api/audits/:auditId', authenticateUser, async (req: Request, res: Response) => {
   try {
     const { auditId } = req.params;
     const userId = req.user!.id;
     const userRole = req.user!.role;
 
-    // Eliminar usando el servicio
     await databaseService.deleteAudit(auditId, userId, userRole);
 
     logger.success('Audit deleted successfully', { auditId });
@@ -394,7 +472,6 @@ app.delete('/api/audits/:auditId', authenticateUser, async (req: Request, res: R
   }
 });
 
-// GET /api/download/:filename - Descargar archivo Excel
 app.get('/api/download/:filename', authenticateUser, async (req: Request, res: Response) => {
   try {
     const { filename } = req.params;
@@ -404,7 +481,7 @@ app.get('/api/download/:filename', authenticateUser, async (req: Request, res: R
       return res.status(404).json({ error: 'Archivo no encontrado' });
     }
 
-    res.download(filePath);
+    res.download(filePath, filename);
   } catch (error: any) {
     logger.error('Error downloading file:', error);
     res.status(500).json({ error: 'Error al descargar archivo' });
@@ -412,16 +489,9 @@ app.get('/api/download/:filename', authenticateUser, async (req: Request, res: R
 });
 
 // ============================================
-// ⚠️ ENDPOINTS VIEJOS ELIMINADOS
-// ============================================
-// Los endpoints /api/stats y /api/stats/charts fueron movidos a /api/audits/stats
-// y se manejan a través del router statsRoutes importado arriba
-
-// ============================================
-// ADMIN ENDPOINTS
+// ADMIN USER MANAGEMENT
 // ============================================
 
-// GET /api/admin/users - Listar todos los usuarios
 app.get('/api/admin/users', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { data: users, error } = await supabaseAdmin
@@ -441,25 +511,19 @@ app.get('/api/admin/users', authenticateUser, requireAdmin, async (req: Request,
   }
 });
 
-// POST /api/admin/users - Crear nuevo usuario
 app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { email, password, full_name, role } = req.body;
 
-    if (!email || !password || !role) {
-      return res.status(400).json({ 
-        error: 'Email, contraseña y rol son requeridos' 
-      });
+    if (!email || !password || !full_name || !role) {
+      return res.status(400).json({ error: 'Todos los campos son requeridos' });
     }
 
-    // Validar rol
-    if (!['admin', 'supervisor', 'analyst'].includes(role)) {
-      return res.status(400).json({ 
-        error: 'Rol inválido. Debe ser admin, supervisor o analyst' 
-      });
+    const validRoles = ['admin', 'supervisor', 'analyst'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ error: 'Rol inválido' });
     }
 
-    // Crear usuario en Supabase Auth
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -472,39 +536,27 @@ app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request
 
     if (authError) {
       logger.error('Error creating user in auth:', authError);
-      return res.status(400).json({ 
-        error: authError.message || 'Error al crear usuario' 
-      });
+      return res.status(500).json({ error: 'Error al crear usuario en autenticación' });
     }
 
-    // Crear perfil en la tabla users
     const { data: userData, error: dbError } = await supabaseAdmin
       .from('users')
       .insert({
         id: authData.user.id,
         email,
         full_name,
-        role,
-        is_active: true
+        role
       })
       .select()
       .single();
 
     if (dbError) {
-      logger.error('Error creating user profile:', dbError);
-      // Intentar eliminar el usuario de auth si falla la creación del perfil
+      logger.error('Error creating user in database:', dbError);
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-      return res.status(500).json({ 
-        error: 'Error al crear perfil de usuario' 
-      });
+      return res.status(500).json({ error: 'Error al crear usuario en base de datos' });
     }
 
-    logger.success('User created successfully', { 
-      userId: userData.id, 
-      email: userData.email,
-      role: userData.role 
-    });
-
+    logger.success('User created successfully', { userId: userData.id, email });
     res.status(201).json(userData);
   } catch (error: any) {
     logger.error('Error creating user:', error);
@@ -512,47 +564,38 @@ app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request
   }
 });
 
-// PUT /api/admin/users/:userId - Actualizar usuario
 app.put('/api/admin/users/:userId', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const { full_name, role, is_active } = req.body;
+    const { email, full_name, role, password } = req.body;
 
-    // Validar rol si se proporciona
-    if (role && !['admin', 'supervisor', 'analyst'].includes(role)) {
-      return res.status(400).json({ 
-        error: 'Rol inválido. Debe ser admin, supervisor o analyst' 
-      });
+    if (role) {
+      const validRoles = ['admin', 'supervisor', 'analyst'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: 'Rol inválido' });
+      }
     }
 
-    // No permitir que un admin se desactive a sí mismo
-    if (userId === req.user!.id && is_active === false) {
-      return res.status(400).json({ 
-        error: 'No puedes desactivar tu propia cuenta' 
-      });
-    }
-
-    // Actualizar en la tabla users
     const { data: userData, error: dbError } = await supabaseAdmin
       .from('users')
       .update({
-        full_name,
-        role,
-        is_active,
-        updated_at: new Date().toISOString()
+        ...(email && { email }),
+        ...(full_name && { full_name }),
+        ...(role && { role })
       })
       .eq('id', userId)
       .select()
       .single();
 
     if (dbError) {
-      logger.error('Error updating user:', dbError);
-      return res.status(500).json({ error: 'Error al actualizar usuario' });
+      logger.error('Error updating user in database:', dbError);
+      return res.status(500).json({ error: 'Error al actualizar usuario en base de datos' });
     }
 
-    // Actualizar metadata en Supabase Auth
-    if (full_name || role) {
+    if (email || password || full_name || role) {
       await supabaseAdmin.auth.admin.updateUserById(userId, {
+        ...(email && { email }),
+        ...(password && { password }),
         user_metadata: {
           full_name: full_name || userData.full_name,
           role: role || userData.role
@@ -568,17 +611,14 @@ app.put('/api/admin/users/:userId', authenticateUser, requireAdmin, async (req: 
   }
 });
 
-// DELETE /api/admin/users/:userId - Eliminar usuario
 app.delete('/api/admin/users/:userId', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
 
-    // No permitir que un admin se elimine a sí mismo
     if (userId === req.user!.id) {
       return res.status(400).json({ error: 'No puedes eliminar tu propia cuenta' });
     }
 
-    // Eliminar de la tabla users (cascade eliminará referencias)
     const { error: dbError } = await supabaseAdmin
       .from('users')
       .delete()
@@ -589,7 +629,6 @@ app.delete('/api/admin/users/:userId', authenticateUser, requireAdmin, async (re
       return res.status(500).json({ error: 'Error al eliminar usuario de la base de datos' });
     }
 
-    // Eliminar de Supabase Auth
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId);
 
     if (authError) {
@@ -605,10 +644,9 @@ app.delete('/api/admin/users/:userId', authenticateUser, requireAdmin, async (re
 });
 
 // ============================================
-// SYSTEM CONFIGURATION ENDPOINTS
+// SYSTEM CONFIGURATION
 // ============================================
 
-// GET /api/admin/config - Obtener configuración del sistema
 app.get('/api/admin/config', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   try {
     res.json({
@@ -624,7 +662,6 @@ app.get('/api/admin/config', authenticateUser, requireAdmin, async (req: Request
   }
 });
 
-// PUT /api/admin/config - Actualizar configuración del sistema
 app.put('/api/admin/config', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { 
@@ -635,21 +672,18 @@ app.put('/api/admin/config', authenticateUser, requireAdmin, async (req: Request
       supabase_service_role_key 
     } = req.body;
 
-    // Actualizar variables de entorno
     if (openai_api_key !== undefined) process.env.OPENAI_API_KEY = openai_api_key;
     if (assemblyai_api_key !== undefined) process.env.ASSEMBLYAI_API_KEY = assemblyai_api_key;
     if (supabase_url !== undefined) process.env.SUPABASE_URL = supabase_url;
     if (supabase_anon_key !== undefined) process.env.SUPABASE_ANON_KEY = supabase_anon_key;
     if (supabase_service_role_key !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = supabase_service_role_key;
 
-    // Guardar en archivo .env
     const envPath = resolve(process.cwd(), '.env');
     let envContent = '';
 
     try {
       envContent = fs.readFileSync(envPath, 'utf-8');
     } catch (error) {
-      // Si no existe, crear nuevo
       envContent = '';
     }
 
@@ -688,7 +722,6 @@ app.put('/api/admin/config', authenticateUser, requireAdmin, async (req: Request
   }
 });
 
-// GET /api/admin/test/:service - Probar conexión con servicios externos
 app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { service } = req.params;
@@ -720,7 +753,6 @@ app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: 
           });
           
           if (response.status === 400 || response.status === 404) {
-            // 400 significa que la API key es válida pero falta el body
             res.json({ success: true, message: 'Conexión exitosa con AssemblyAI' });
           } else if (response.status === 401) {
             res.json({ success: false, error: 'API key inválida' });

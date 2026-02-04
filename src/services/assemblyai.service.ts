@@ -241,7 +241,9 @@ class AssemblyAIService {
       return {
         text: result.text || '',
         utterances,
-        duration: result.audio_duration ?? undefined
+        duration: result.audio_duration ?? undefined,
+        words: utterances,  // Mismo contenido que utterances
+        audio_duration: result.audio_duration ?? undefined
       };
 
     } catch (error: any) {

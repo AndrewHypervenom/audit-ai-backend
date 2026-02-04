@@ -8,7 +8,7 @@
 export interface AuditInput {
   executiveName: string;      // Nombre del ejecutivo/agente
   executiveId: string;         // ID del ejecutivo/agente
-  callType: string;            // Tipo de llamada: 'INBOUND' o 'OUTBOUND'
+  callType: string;            // Tipo de llamada: 'FRAUDE' o 'COBRANZA'
   clientId: string;            // ID del cliente (ej: "6786724")
   callDate: string;            // Fecha de la llamada en formato ISO
   callDuration?: string | null; // Duración de la llamada (opcional)
@@ -17,17 +17,24 @@ export interface AuditInput {
 }
 
 /**
+ * ⭐ NUEVO: Palabra individual de la transcripción
+ */
+export interface TranscriptWord {
+  start: number;
+  end: number;
+  text: string;
+  speaker: string;
+}
+
+/**
  * Resultado de la transcripción
  */
 export interface TranscriptResult {
   text: string;
-  utterances: Array<{
-    start: number;
-    end: number;
-    text: string;
-    speaker: string;
-  }>;
+  utterances: TranscriptWord[];
   duration?: number;
+  words?: TranscriptWord[];  // Array opcional de palabras
+  audio_duration?: number;   // Duración del audio en segundos
 }
 
 /**
@@ -38,6 +45,7 @@ export interface ImageAnalysis {
   system: string;
   data: any;
   confidence: number;
+  analysis?: string;  // Campo opcional para análisis de texto
 }
 
 /**
@@ -61,6 +69,7 @@ export interface EvaluationResult {
     description: string;
   }>;
   excelUrl?: string;
+  totalTokens?: number;  // Tokens totales usados
 }
 
 /**
@@ -87,6 +96,7 @@ export interface APICosts {
   };
   totalCost: number;
   currency: string;
+  total?: number;  // Alias para totalCost
 }
 
 /**
