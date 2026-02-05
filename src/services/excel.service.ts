@@ -4,7 +4,6 @@ import type { AuditInput, EvaluationResult } from '../types/index.js';
 import { getCriteriaForCallType, type EvaluationBlock } from '../config/evaluation-criteria.js';
 import * as path from 'path';
 import * as fs from 'fs';
-import { supabaseAdmin } from '../config/supabase.js';
 
 class ExcelService {
   // ✅ NUEVO: Helper para limpiar nombres de archivos
@@ -16,11 +15,9 @@ class ExcelService {
       .substring(0, 100);    // Limitar longitud
   }
 
-  // ✅ MODIFICADO: Agregar parámetro auditId opcional
   async generateExcelReport(
     auditInput: AuditInput,
-    evaluation: Omit<EvaluationResult, 'excelUrl'>,
-    auditId?: string  // ✅ NUEVO PARÁMETRO
+    evaluation: Omit<EvaluationResult, 'excelUrl'>
   ): Promise<string> {
     try {
       logger.info('Generating Excel report with correct structure');
@@ -40,24 +37,12 @@ class ExcelService {
         fs.mkdirSync(resultsDir, { recursive: true });
       }
 
-      // ✅ MODIFICADO: Limpiar el executiveId antes de usarlo en el nombre
+      // ✅ CAMBIO: Limpiar el executiveId antes de usarlo en el nombre
       const cleanExecutiveId = this.sanitizeFilename(auditInput.executiveId);
       const filename = `auditoria_${cleanExecutiveId}_${Date.now()}.xlsx`;
       const filepath = path.join(resultsDir, filename);
 
       await workbook.xlsx.writeFile(filepath);
-
-      // ✅ NUEVO: Guardar también en la base de datos si se proporciona auditId
-      if (auditId) {
-        try {
-          const buffer = await workbook.xlsx.writeBuffer();
-          await this.saveExcelToDatabase(auditId, filename, buffer);
-          logger.success('Excel saved to database', { auditId, filename });
-        } catch (dbError) {
-          logger.error('Error saving Excel to database:', dbError);
-          // No fallar si no se puede guardar en BD
-        }
-      }
 
       logger.success('Excel report generated', { filepath });
 
@@ -67,58 +52,6 @@ class ExcelService {
       throw error;
     }
   }
-
-  // ✅ NUEVO: Guardar Excel en la base de datos
-  private async saveExcelToDatabase(
-    auditId: string,
-    filename: string,
-    buffer: Buffer
-  ): Promise<void> {
-    try {
-      const { error } = await supabaseAdmin
-        .from('evaluations')
-        .update({
-          excel_data: buffer,
-          excel_filename: filename
-        })
-        .eq('audit_id', auditId);
-
-      if (error) throw error;
-
-      logger.success('Excel data saved to database', { auditId, size: buffer.length });
-    } catch (error) {
-      logger.error('Error saving Excel to database', error);
-      throw error;
-    }
-  }
-
-  // ✅ NUEVO: Recuperar Excel desde la base de datos
-  async getExcelFromDatabase(auditId: string): Promise<{ filename: string; data: Buffer } | null> {
-    try {
-      const { data, error } = await supabaseAdmin
-        .from('evaluations')
-        .select('excel_filename, excel_data')
-        .eq('audit_id', auditId)
-        .single();
-
-      if (error) throw error;
-
-      if (!data || !data.excel_data) {
-        return null;
-      }
-
-      const buffer = Buffer.from(data.excel_data);
-
-      return {
-        filename: data.excel_filename || 'auditoria.xlsx',
-        data: buffer
-      };
-    } catch (error) {
-      logger.error('Error getting Excel from database', error);
-      return null;
-    }
-  }
-
   private createAnalysisSheet(
     sheet: ExcelJS.Worksheet,
     auditInput: AuditInput,
