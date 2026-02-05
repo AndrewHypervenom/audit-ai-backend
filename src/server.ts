@@ -66,7 +66,7 @@ const upload = multer({
       if (allowedMimes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error('Solo se permiten imÃ¡genes JPEG o PNG'));
+        cb(new Error('Solo se permiten imágenes JPEG o PNG'));
       }
     } else {
       cb(null, true);
@@ -74,7 +74,7 @@ const upload = multer({
   }
 });
 
-// Middleware - CORS actualizado para mÃºltiples orÃ­genes
+// Middleware - CORS actualizado para múltiples orígenes
 const allowedOrigins = [
   'https://audit-ai-gamma.vercel.app',
   'http://localhost:5173',
@@ -102,7 +102,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Servir archivos estÃ¡ticos
+// Servir archivos estáticos
 app.use('/results', express.static(resultsDir));
 
 // Health check
@@ -135,7 +135,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email y contraseÃ±a son requeridos' });
+      return res.status(400).json({ error: 'Email y contraseña son requeridos' });
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -145,7 +145,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 
     if (error) {
       logger.error('Login error:', error);
-      return res.status(401).json({ error: 'Credenciales invÃ¡lidas' });
+      return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     res.json({
@@ -154,7 +154,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.error('Login error:', error);
-    res.status(500).json({ error: 'Error al iniciar sesiÃ³n' });
+    res.status(500).json({ error: 'Error al iniciar sesión' });
   }
 });
 
@@ -164,13 +164,13 @@ app.post('/api/auth/logout', authenticateUser, async (req: Request, res: Respons
 
     if (error) {
       logger.error('Logout error:', error);
-      return res.status(500).json({ error: 'Error al cerrar sesiÃ³n' });
+      return res.status(500).json({ error: 'Error al cerrar sesión' });
     }
 
-    res.json({ message: 'SesiÃ³n cerrada exitosamente' });
+    res.json({ message: 'Sesión cerrada exitosamente' });
   } catch (error: any) {
     logger.error('Logout error:', error);
-    res.status(500).json({ error: 'Error al cerrar sesiÃ³n' });
+    res.status(500).json({ error: 'Error al cerrar sesión' });
   }
 });
 
@@ -219,52 +219,22 @@ app.get('/api/download/:filename', authenticateUser, async (req: Request, res: R
       return res.status(400).json({ error: 'Nombre de archivo inválido' });
     }
 
-    logger.info('Download requested:', { filename, userId: req.user!.id });
-
-    // ✅ PASO 1: Buscar primero en la base de datos
-    try {
-      const { data: evaluation, error } = await supabaseAdmin
-        .from('evaluations')
-        .select('audit_id, excel_filename, excel_data')
-        .eq('excel_filename', filename)
-        .single();
-
-      if (!error && evaluation && evaluation.excel_data) {
-        logger.info('Serving Excel from database:', { filename });
-
-        // Convertir el buffer de la BD a Buffer de Node.js
-        const buffer = Buffer.from(evaluation.excel_data);
-
-        // Configurar headers
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Length', buffer.length.toString());
-
-        // Enviar el archivo desde la BD
-        return res.send(buffer);
-      }
-    } catch (dbError) {
-      logger.warn('Excel not found in database, trying filesystem:', filename);
-    }
-
-    // ✅ PASO 2: Si no está en BD, buscar en el sistema de archivos (fallback)
+    // Construir la ruta completa del archivo
     const filePath = path.join(resultsDir, filename);
 
+    // Verificar que el archivo existe
     if (!fs.existsSync(filePath)) {
-      logger.error('File not found in database or filesystem:', filename);
-      return res.status(404).json({ 
-        error: 'Archivo no encontrado',
-        message: 'El archivo no existe en el servidor. Puede haber sido eliminado.'
-      });
+      logger.error('File not found:', filePath);
+      return res.status(404).json({ error: 'Archivo no encontrado' });
     }
 
-    logger.info('Serving Excel from filesystem:', { filename });
+    logger.info('Downloading file:', { filename, userId: req.user!.id });
 
-    // Configurar headers
+    // Configurar headers para la descarga
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    // Enviar el archivo desde el sistema de archivos
+    // Enviar el archivo
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
 
@@ -307,7 +277,7 @@ app.get('/api/audits', authenticateUser, async (req: Request, res: Response) => 
     });
   } catch (error: any) {
     logger.error('Error fetching audits', error);
-    res.status(500).json({ error: 'Error al obtener auditorÃ­as' });
+    res.status(500).json({ error: 'Error al obtener auditorías' });
   }
 });
 
@@ -330,19 +300,19 @@ app.get('/api/audits/:auditId', authenticateUser, async (req: Request, res: Resp
   } catch (error: any) {
     logger.error('Error fetching audit', error);
     
-    if (error.message === 'Audit not found' || error.message === 'AuditorÃ­a no encontrada') {
-      return res.status(404).json({ error: 'AuditorÃ­a no encontrada' });
+    if (error.message === 'Audit not found' || error.message === 'Auditoría no encontrada') {
+      return res.status(404).json({ error: 'Auditoría no encontrada' });
     }
     
     if (error.message === 'Access denied' || error.message === 'Acceso denegado') {
       return res.status(403).json({ error: 'Acceso denegado' });
     }
     
-    res.status(500).json({ error: 'Error al obtener auditorÃ­a' });
+    res.status(500).json({ error: 'Error al obtener auditoría' });
   }
 });
 
-// POST /api/evaluate - Crear nueva auditorÃ­a
+// POST /api/evaluate - Crear nueva auditoría
 app.post('/api/evaluate', 
   authenticateUser,
   upload.fields([
@@ -356,7 +326,7 @@ app.post('/api/evaluate',
     const sseClientId = req.body.sseClientId || uuidv4();
 
     try {
-      logger.info('ðŸŽ¬ Starting new audit process...', {
+      logger.info('🎬 Starting new audit process...', {
         userId: req.user!.id,
         userEmail: req.user!.email,
         sseClientId
@@ -372,7 +342,7 @@ app.post('/api/evaluate',
       const audioFile = files.audio[0];
       const imageFiles = files.images || [];
 
-      logger.info('ðŸ“ Files received:', {
+      logger.info('📁 Files received:', {
         audio: audioFile.originalname,
         audioSize: audioFile.size,
         images: imageFiles.length
@@ -389,7 +359,7 @@ app.post('/api/evaluate',
         imagePaths: imageFiles.map(f => f.path)
       };
 
-      logger.info('ðŸ“‹ Audit metadata:', metadata);
+      logger.info('📋 Audit metadata:', metadata);
 
       // 1. Crear entrada en la base de datos
       progressBroadcaster.progress(sseClientId, 'upload', 10, 'Archivos subidos correctamente');
@@ -401,20 +371,20 @@ app.post('/api/evaluate',
         imageFilenames: imageFiles.map(f => f.filename)
       });
 
-      logger.success('âœ… Audit record created', { auditId });
+      logger.success('✅ Audit record created', { auditId });
 
-      // 2. Transcribir audio - âœ… CORREGIDO
-      progressBroadcaster.progress(sseClientId, 'transcription', 25, 'Iniciando transcripciÃ³n...');
+      // 2. Transcribir audio
+      progressBroadcaster.progress(sseClientId, 'transcription', 25, 'Iniciando transcripción...');
       
       const transcription = await assemblyAIService.transcribe(audioFile.path);
 
-      logger.success('âœ… Transcription completed', { 
+      logger.success('✅ Transcription completed', { 
         duration: transcription.audio_duration,
         words: transcription.words?.length 
       });
 
-      // 3. Analizar imÃ¡genes con OpenAI - âœ… CORREGIDO
-      progressBroadcaster.progress(sseClientId, 'analysis', 50, 'Analizando imÃ¡genes...');
+      // 3. Analizar imágenes con OpenAI
+      progressBroadcaster.progress(sseClientId, 'analysis', 50, 'Analizando imágenes...');
 
       const imageAnalyses = imageFiles.length > 0 
         ? await openAIService.analyzeMultipleImages(imageFiles.map(f => f.path))
@@ -422,11 +392,11 @@ app.post('/api/evaluate',
 
       const imageAnalysis = imageAnalyses.length > 0
         ? imageAnalyses.map(img => `${img.system}: ${JSON.stringify(img.data)}`).join('\n\n')
-        : 'No se proporcionaron imÃ¡genes para analizar';
+        : 'No se proporcionaron imágenes para analizar';
 
-      logger.success('âœ… Image analysis completed');
+      logger.success('✅ Image analysis completed');
 
-      // 4. Evaluar con criterios - âœ… CORREGIDO
+      // 4. Evaluar con criterios
       progressBroadcaster.progress(sseClientId, 'evaluation', 75, 'Evaluando con IA...');
 
       const evaluation = await evaluatorService.evaluate(
@@ -435,13 +405,13 @@ app.post('/api/evaluate',
         imageAnalyses
       );
 
-      logger.success('âœ… Evaluation completed', {
+      logger.success('✅ Evaluation completed', {
         totalScore: evaluation.totalScore,
         maxPossibleScore: evaluation.maxPossibleScore,
         percentage: evaluation.percentage
       });
 
-      // 5. Generar Excel - âœ… CORREGIDO
+      // 5. Generar Excel
       progressBroadcaster.progress(sseClientId, 'excel', 90, 'Generando reporte Excel...');
 
       const excelFilename = `auditoria_${metadata.executiveId}_${Date.now()}.xlsx`;
@@ -449,9 +419,9 @@ app.post('/api/evaluate',
 
       await excelService.generateExcelReport(metadata, evaluation);
 
-      logger.success('âœ… Excel report generated', { filename: excelFilename });
+      logger.success('✅ Excel report generated', { filename: excelFilename });
 
-      // 6. Calcular costos - âœ… CORREGIDO
+      // 6. Calcular costos
       const costs = costCalculatorService.calculateTotalCost(
         transcription.audio_duration || 0,
         imageFiles.length,
@@ -461,7 +431,7 @@ app.post('/api/evaluate',
         evaluation.usage?.outputTokens || 0
       );
 
-      logger.info('ðŸ’° Costs calculated:', costs);
+      logger.info('💰 Costs calculated:', costs);
 
       // 7. Actualizar en base de datos
       await databaseService.completeAudit(auditId, {
@@ -474,14 +444,14 @@ app.post('/api/evaluate',
         costs
       });
 
-      logger.success('âœ… Audit completed successfully', {
+      logger.success('✅ Audit completed successfully', {
         auditId,
         totalTime: `${((Date.now() - startTime) / 1000).toFixed(2)}s`,
         totalCost: `$${costs.totalCost.toFixed(4)}`
       });
 
       // 8. Enviar progreso final
-      progressBroadcaster.progress(sseClientId, 'completed', 100, 'Â¡AuditorÃ­a completada!');
+      progressBroadcaster.progress(sseClientId, 'completed', 100, '¡Auditoría completada!');
 
       // Registrar actividad
       await databaseService.logAuditActivity(
@@ -503,7 +473,7 @@ app.post('/api/evaluate',
       });
 
     } catch (error: any) {
-      logger.error('âŒ Error processing audit:', error);
+      logger.error('❌ Error processing audit:', error);
 
       if (auditId) {
         await databaseService.markAuditError(auditId, error.message);
@@ -512,7 +482,7 @@ app.post('/api/evaluate',
       progressBroadcaster.progress(sseClientId, 'error', 0, `Error: ${error.message}`);
 
       res.status(500).json({ 
-        error: 'Error procesando auditorÃ­a', 
+        error: 'Error procesando auditoría', 
         details: error.message,
         auditId 
       });
@@ -532,7 +502,7 @@ app.delete('/api/audits/:auditId', authenticateUser, async (req: Request, res: R
 
     res.json({ 
       success: true, 
-      message: 'AuditorÃ­a eliminada exitosamente' 
+      message: 'Auditoría eliminada exitosamente' 
     });
 
   } catch (error: any) {
@@ -543,26 +513,10 @@ app.delete('/api/audits/:auditId', authenticateUser, async (req: Request, res: R
     }
 
     if (error.message.includes('no encontrada')) {
-      return res.status(404).json({ error: 'AuditorÃ­a no encontrada' });
+      return res.status(404).json({ error: 'Auditoría no encontrada' });
     }
 
-    res.status(500).json({ error: 'Error al eliminar auditorÃ­a' });
-  }
-});
-
-app.get('/api/download/:filename', authenticateUser, async (req: Request, res: Response) => {
-  try {
-    const { filename } = req.params;
-    const filePath = path.join(resultsDir, filename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Archivo no encontrado' });
-    }
-
-    res.download(filePath, filename);
-  } catch (error: any) {
-    logger.error('Error downloading file:', error);
-    res.status(500).json({ error: 'Error al descargar archivo' });
+    res.status(500).json({ error: 'Error al eliminar auditoría' });
   }
 });
 
@@ -599,7 +553,7 @@ app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request
 
     const validRoles = ['admin', 'supervisor', 'analyst'];
     if (!validRoles.includes(role)) {
-      return res.status(400).json({ error: 'Rol invÃ¡lido' });
+      return res.status(400).json({ error: 'Rol inválido' });
     }
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -614,7 +568,7 @@ app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request
 
     if (authError) {
       logger.error('Error creating user in auth:', authError);
-      return res.status(500).json({ error: 'Error al crear usuario en autenticaciÃ³n' });
+      return res.status(500).json({ error: 'Error al crear usuario en autenticación' });
     }
 
     const { data: userData, error: dbError } = await supabaseAdmin
@@ -650,7 +604,7 @@ app.put('/api/admin/users/:userId', authenticateUser, requireAdmin, async (req: 
     if (role) {
       const validRoles = ['admin', 'supervisor', 'analyst'];
       if (!validRoles.includes(role)) {
-        return res.status(400).json({ error: 'Rol invÃ¡lido' });
+        return res.status(400).json({ error: 'Rol inválido' });
       }
     }
 
@@ -736,7 +690,7 @@ app.get('/api/admin/config', authenticateUser, requireAdmin, async (req: Request
     });
   } catch (error: any) {
     logger.error('Error fetching config:', error);
-    res.status(500).json({ error: 'Error al obtener configuraciÃ³n' });
+    res.status(500).json({ error: 'Error al obtener configuración' });
   }
 });
 
@@ -793,10 +747,10 @@ app.put('/api/admin/config', authenticateUser, requireAdmin, async (req: Request
     fs.writeFileSync(envPath, envContent.trim());
 
     logger.success('Configuration updated successfully');
-    res.json({ success: true, message: 'ConfiguraciÃ³n actualizada exitosamente' });
+    res.json({ success: true, message: 'Configuración actualizada exitosamente' });
   } catch (error: any) {
     logger.error('Error updating config:', error);
-    res.status(500).json({ error: 'Error al actualizar configuraciÃ³n' });
+    res.status(500).json({ error: 'Error al actualizar configuración' });
   }
 });
 
@@ -814,10 +768,10 @@ app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: 
           });
           
           if (response.ok) {
-            res.json({ success: true, message: 'ConexiÃ³n exitosa con OpenAI' });
+            res.json({ success: true, message: 'Conexión exitosa con OpenAI' });
           } 
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Error de conexiÃ³n';
+          const errorMessage = error instanceof Error ? error.message : 'Error de conexión';
           res.json({ success: false, error: errorMessage });
         }
         break;
@@ -831,11 +785,11 @@ app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: 
           });
           
           if (response.status === 400 || response.status === 404) {
-            res.json({ success: true, message: 'ConexiÃ³n exitosa con AssemblyAI' });
+            res.json({ success: true, message: 'Conexión exitosa con AssemblyAI' });
           } else if (response.status === 401) {
-            res.json({ success: false, error: 'API key invÃ¡lida' });
+            res.json({ success: false, error: 'API key inválida' });
           } else {
-            res.json({ success: true, message: 'ConexiÃ³n exitosa con AssemblyAI' });
+            res.json({ success: true, message: 'Conexión exitosa con AssemblyAI' });
           }
         } catch (error: any) {
           res.json({ success: false, error: error.message });
@@ -852,7 +806,7 @@ app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: 
           if (error) {
             res.json({ success: false, error: error.message });
           } else {
-            res.json({ success: true, message: 'ConexiÃ³n exitosa con Supabase' });
+            res.json({ success: true, message: 'Conexión exitosa con Supabase' });
           }
         } catch (error: any) {
           res.json({ success: false, error: error.message });
@@ -860,11 +814,11 @@ app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: 
         break;
 
       default:
-        res.status(400).json({ error: 'Servicio no vÃ¡lido' });
+        res.status(400).json({ error: 'Servicio no válido' });
     }
   } catch (error: any) {
     logger.error('Error testing service:', error);
-    res.status(500).json({ error: 'Error al probar conexiÃ³n' });
+    res.status(500).json({ error: 'Error al probar conexión' });
   }
 });
 
