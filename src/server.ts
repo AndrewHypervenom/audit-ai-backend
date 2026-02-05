@@ -213,28 +213,58 @@ app.get('/api/download/:filename', authenticateUser, async (req: Request, res: R
   try {
     const { filename } = req.params;
     
-    // Validar que el filename no contenga caracteres peligrosos (path traversal)
+    // Validar que el filename no contenga caracteres peligrosos
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
       logger.warn('Attempt to access file with invalid path:', filename);
       return res.status(400).json({ error: 'Nombre de archivo inválido' });
     }
 
-    // Construir la ruta completa del archivo
-    const filePath = path.join(resultsDir, filename);
+    logger.info('Download requested:', { filename, userId: req.user!.id });
 
-    // Verificar que el archivo existe
-    if (!fs.existsSync(filePath)) {
-      logger.error('File not found:', filePath);
-      return res.status(404).json({ error: 'Archivo no encontrado' });
+    // ✅ PASO 1: Buscar primero en la base de datos
+    try {
+      const { data: evaluation, error } = await supabaseAdmin
+        .from('evaluations')
+        .select('audit_id, excel_filename, excel_data')
+        .eq('excel_filename', filename)
+        .single();
+
+      if (!error && evaluation && evaluation.excel_data) {
+        logger.info('Serving Excel from database:', { filename });
+
+        // Convertir el buffer de la BD a Buffer de Node.js
+        const buffer = Buffer.from(evaluation.excel_data);
+
+        // Configurar headers
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', buffer.length.toString());
+
+        // Enviar el archivo desde la BD
+        return res.send(buffer);
+      }
+    } catch (dbError) {
+      logger.warn('Excel not found in database, trying filesystem:', filename);
     }
 
-    logger.info('Downloading file:', { filename, userId: req.user!.id });
+    // ✅ PASO 2: Si no está en BD, buscar en el sistema de archivos (fallback)
+    const filePath = path.join(resultsDir, filename);
 
-    // Configurar headers para la descarga
+    if (!fs.existsSync(filePath)) {
+      logger.error('File not found in database or filesystem:', filename);
+      return res.status(404).json({ 
+        error: 'Archivo no encontrado',
+        message: 'El archivo no existe en el servidor. Puede haber sido eliminado.'
+      });
+    }
+
+    logger.info('Serving Excel from filesystem:', { filename });
+
+    // Configurar headers
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    // Enviar el archivo
+    // Enviar el archivo desde el sistema de archivos
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
 
