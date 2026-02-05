@@ -206,7 +206,7 @@ app.get('/api/progress/:clientId', (req: Request, res: Response) => {
 });
 
 // ============================================
-// DOWNLOAD ENDPOINT - ✅ NUEVO ENDPOINT AGREGADO
+// DOWNLOAD ENDPOINT
 // ============================================
 
 app.get('/api/download/:filename', authenticateUser, async (req: Request, res: Response) => {
@@ -228,9 +228,6 @@ app.get('/api/download/:filename', authenticateUser, async (req: Request, res: R
       return res.status(404).json({ error: 'Archivo no encontrado' });
     }
 
-    // Verificar que el archivo pertenece a una auditoría del usuario (opcional - para mayor seguridad)
-    // Por ahora, permitimos la descarga si el usuario está autenticado
-    
     logger.info('Downloading file:', { filename, userId: req.user!.id });
 
     // Configurar headers para la descarga
