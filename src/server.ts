@@ -414,10 +414,7 @@ app.post('/api/evaluate',
       // 5. Generar Excel
       progressBroadcaster.progress(sseClientId, 'excel', 90, 'Generando reporte Excel...');
 
-      const excelFilename = `auditoria_${metadata.executiveId}_${Date.now()}.xlsx`;
-      const excelPath = path.join(resultsDir, excelFilename);
-
-      await excelService.generateExcelReport(metadata, evaluation);
+      const excelFilename = await excelService.generateExcelReport(metadata, evaluation);
 
       logger.success('✅ Excel report generated', { filename: excelFilename });
 
