@@ -206,6 +206,57 @@ app.get('/api/progress/:clientId', (req: Request, res: Response) => {
 });
 
 // ============================================
+// DOWNLOAD ENDPOINT - ✅ NUEVO ENDPOINT AGREGADO
+// ============================================
+
+app.get('/api/download/:filename', authenticateUser, async (req: Request, res: Response) => {
+  try {
+    const { filename } = req.params;
+    
+    // Validar que el filename no contenga caracteres peligrosos (path traversal)
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      logger.warn('Attempt to access file with invalid path:', filename);
+      return res.status(400).json({ error: 'Nombre de archivo inválido' });
+    }
+
+    // Construir la ruta completa del archivo
+    const filePath = path.join(resultsDir, filename);
+
+    // Verificar que el archivo existe
+    if (!fs.existsSync(filePath)) {
+      logger.error('File not found:', filePath);
+      return res.status(404).json({ error: 'Archivo no encontrado' });
+    }
+
+    // Verificar que el archivo pertenece a una auditoría del usuario (opcional - para mayor seguridad)
+    // Por ahora, permitimos la descarga si el usuario está autenticado
+    
+    logger.info('Downloading file:', { filename, userId: req.user!.id });
+
+    // Configurar headers para la descarga
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    // Enviar el archivo
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+    fileStream.on('error', (error) => {
+      logger.error('Error reading file:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Error al leer el archivo' });
+      }
+    });
+
+  } catch (error: any) {
+    logger.error('Error downloading file:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error al descargar el archivo' });
+    }
+  }
+});
+
+// ============================================
 // AUDIT ENDPOINTS
 // ============================================
 
@@ -257,239 +308,262 @@ app.get('/api/audits/:auditId', authenticateUser, async (req: Request, res: Resp
     }
     
     if (error.message === 'Access denied' || error.message === 'Acceso denegado') {
-      return res.status(403).json({ error: 'Acceso denegado' });
+      return res.status(403).json({ error: 'No tienes permisos para ver esta auditoría' });
     }
     
     res.status(500).json({ error: 'Error al obtener auditoría' });
   }
 });
 
-// POST /api/evaluate - Crear nueva auditoría
-app.post('/api/evaluate', 
-  authenticateUser,
-  upload.fields([
-    { name: 'audio', maxCount: 1 },
-    { name: 'images', maxCount: 15 }
-  ]),
-  async (req: Request, res: Response) => {
-    const startTime = Date.now();
-    let auditId: string | null = null;
-    
-    const sseClientId = req.body.sseClientId || uuidv4();
-
-    try {
-      logger.info('🎬 Starting new audit process...', {
-        userId: req.user!.id,
-        userEmail: req.user!.email,
-        sseClientId
-      });
-
-      // Validar archivos requeridos
-      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-
-      if (!files || !files.audio || files.audio.length === 0) {
-        return res.status(400).json({ error: 'Se requiere un archivo de audio' });
-      }
-
-      const audioFile = files.audio[0];
-      const imageFiles = files.images || [];
-
-      logger.info('📁 Files received:', {
-        audio: audioFile.originalname,
-        audioSize: audioFile.size,
-        images: imageFiles.length
-      });
-
-      const metadata: AuditInput = {
-        executiveName: req.body.executiveName || '',
-        executiveId: req.body.executiveId || '',
-        callType: req.body.callType || '',
-        clientId: req.body.clientId || '',
-        callDate: req.body.callDate || new Date().toISOString().split('T')[0],
-        callDuration: req.body.callDuration || null,
-        audioPath: audioFile.path,
-        imagePaths: imageFiles.map(f => f.path)
-      };
-
-      logger.info('📋 Audit metadata:', metadata);
-
-      // 1. Crear entrada en la base de datos
-      progressBroadcaster.progress(sseClientId, 'upload', 10, 'Archivos subidos correctamente');
-
-      auditId = await databaseService.createAudit({
-        userId: req.user!.id,
-        auditInput: metadata,
-        audioFilename: audioFile.filename,
-        imageFilenames: imageFiles.map(f => f.filename)
-      });
-
-      logger.success('✅ Audit record created', { auditId });
-
-      // 2. Transcribir audio - ✅ CORREGIDO
-      progressBroadcaster.progress(sseClientId, 'transcription', 25, 'Iniciando transcripción...');
-      
-      const transcription = await assemblyAIService.transcribe(audioFile.path);
-
-      logger.success('✅ Transcription completed', { 
-        duration: transcription.audio_duration,
-        words: transcription.words?.length 
-      });
-
-      // 3. Analizar imágenes con OpenAI - ✅ CORREGIDO
-      progressBroadcaster.progress(sseClientId, 'analysis', 50, 'Analizando imágenes...');
-
-      const imageAnalyses = imageFiles.length > 0 
-        ? await openAIService.analyzeMultipleImages(imageFiles.map(f => f.path))
-        : [];
-
-      const imageAnalysis = imageAnalyses.length > 0
-        ? imageAnalyses.map(img => `${img.system}: ${JSON.stringify(img.data)}`).join('\n\n')
-        : 'No se proporcionaron imágenes para analizar';
-
-      logger.success('✅ Image analysis completed');
-
-      // 4. Evaluar con criterios - ✅ CORREGIDO
-      progressBroadcaster.progress(sseClientId, 'evaluation', 75, 'Evaluando con IA...');
-
-      const evaluation = await evaluatorService.evaluate(
-        metadata,
-        transcription,
-        imageAnalyses
-      );
-
-      logger.success('✅ Evaluation completed', {
-        totalScore: evaluation.totalScore,
-        maxPossibleScore: evaluation.maxPossibleScore,
-        percentage: evaluation.percentage
-      });
-
-      // 5. Generar Excel - ✅ CORREGIDO
-      progressBroadcaster.progress(sseClientId, 'excel', 90, 'Generando reporte Excel...');
-
-      const excelFilename = `auditoria_${metadata.executiveId}_${Date.now()}.xlsx`;
-      const excelPath = path.join(resultsDir, excelFilename);
-
-      await excelService.generateExcelReport(metadata, evaluation);
-
-      logger.success('✅ Excel report generated', { filename: excelFilename });
-
-      // 6. Calcular costos - ✅ CORREGIDO
-      const costs = costCalculatorService.calculateTotalCost(
-        transcription.audio_duration || 0,
-        imageFiles.length,
-        0,
-        0,
-        evaluation.usage?.inputTokens || 0,
-        evaluation.usage?.outputTokens || 0
-      );
-
-      logger.info('💰 Costs calculated:', costs);
-
-      // 7. Actualizar en base de datos
-      await databaseService.completeAudit(auditId, {
-        transcription: transcription.text,
-        transcriptionWords: transcription.words,
-        imageAnalysis: imageAnalysis,
-        evaluation,
-        excelPath: excelFilename,
-        processingTimeMs: Date.now() - startTime,
-        costs
-      });
-
-      logger.success('✅ Audit completed successfully', {
-        auditId,
-        totalTime: `${((Date.now() - startTime) / 1000).toFixed(2)}s`,
-        totalCost: `$${costs.totalCost.toFixed(4)}`
-      });
-
-      // 8. Enviar progreso final
-      progressBroadcaster.progress(sseClientId, 'completed', 100, '¡Auditoría completada!');
-
-      // Registrar actividad
-      await databaseService.logAuditActivity(
-        auditId,
-        req.user!.id,
-        'created',
-        null,
-        req.ip,
-        req.headers['user-agent']
-      );
-
-      // Responder con el ID
-      res.json({
-        success: true,
-        auditId,
-        excelUrl: `/results/${excelFilename}`,
-        processingTime: Date.now() - startTime,
-        costs
-      });
-
-    } catch (error: any) {
-      logger.error('❌ Error processing audit:', error);
-
-      if (auditId) {
-        await databaseService.markAuditError(auditId, error.message);
-      }
-
-      progressBroadcaster.progress(sseClientId, 'error', 0, `Error: ${error.message}`);
-
-      res.status(500).json({ 
-        error: 'Error procesando auditoría', 
-        details: error.message,
-        auditId 
-      });
-    }
-  }
-);
-
 app.delete('/api/audits/:auditId', authenticateUser, async (req: Request, res: Response) => {
   try {
     const { auditId } = req.params;
-    const userId = req.user!.id;
-    const userRole = req.user!.role;
 
-    await databaseService.deleteAudit(auditId, userId, userRole);
+    const audit = await databaseService.getAuditById(auditId, req.user!.id, req.user!.role);
 
-    logger.success('Audit deleted successfully', { auditId });
-
-    res.json({ 
-      success: true, 
-      message: 'Auditoría eliminada exitosamente' 
-    });
-
-  } catch (error: any) {
-    logger.error('Error deleting audit:', error);
-
-    if (error.message.includes('No tienes permisos')) {
-      return res.status(403).json({ error: error.message });
+    if (audit.audit.user_id !== req.user!.id && req.user!.role !== 'admin') {
+      return res.status(403).json({ error: 'No tienes permisos para eliminar esta auditoría' });
     }
 
-    if (error.message.includes('no encontrada')) {
+    await databaseService.logAuditActivity(
+      auditId,
+      req.user!.id,
+      'deleted',
+      null,
+      req.ip,
+      req.headers['user-agent']
+    );
+
+    const { error } = await supabaseAdmin
+      .from('audits')
+      .delete()
+      .eq('id', auditId);
+
+    if (error) {
+      logger.error('Error deleting audit', error);
+      return res.status(500).json({ error: 'Error al eliminar auditoría' });
+    }
+
+    logger.success('Audit deleted', { auditId, userId: req.user!.id });
+    res.json({ success: true, message: 'Auditoría eliminada exitosamente' });
+  } catch (error: any) {
+    logger.error('Error deleting audit', error);
+    
+    if (error.message === 'Audit not found' || error.message === 'Auditoría no encontrada') {
       return res.status(404).json({ error: 'Auditoría no encontrada' });
     }
-
+    
     res.status(500).json({ error: 'Error al eliminar auditoría' });
   }
 });
 
-app.get('/api/download/:filename', authenticateUser, async (req: Request, res: Response) => {
-  try {
-    const { filename } = req.params;
-    const filePath = path.join(resultsDir, filename);
+app.post('/api/evaluate', authenticateUser, upload.fields([
+  { name: 'audio', maxCount: 1 },
+  { name: 'images', maxCount: 10 }
+]), async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  let auditId: string | null = null;
 
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Archivo no encontrado' });
+  try {
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const audioFile = files.audio?.[0];
+    const imageFiles = files.images || [];
+    const sseClientId = req.body.sseClientId;
+
+    if (!audioFile) {
+      return res.status(400).json({ error: 'No se proporcionó archivo de audio' });
     }
 
-    res.download(filePath, filename);
+    if (imageFiles.length === 0) {
+      return res.status(400).json({ error: 'Se requiere al menos una imagen' });
+    }
+
+    const auditInput: AuditInput = {
+      executiveName: req.body.executiveName,
+      executiveId: req.body.executiveId,
+      callType: req.body.callType,
+      clientId: req.body.clientId,
+      callDate: req.body.callDate,
+      callDuration: req.body.callDuration || null,
+      audioPath: audioFile.path,
+      imagePaths: imageFiles.map(f => f.path)
+    };
+
+    const audit = await databaseService.createAudit({
+      user_id: req.user!.id,
+      executive_name: auditInput.executiveName,
+      executive_id: auditInput.executiveId,
+      call_type: auditInput.callType,
+      client_id: auditInput.clientId,
+      call_date: auditInput.callDate,
+      call_duration: auditInput.callDuration,
+      status: 'processing'
+    });
+
+    auditId = audit.id;
+
+    progressBroadcaster.sendProgress(sseClientId, {
+      stage: 'transcription',
+      progress: 0,
+      message: 'Iniciando transcripción...',
+      auditId
+    });
+
+    const transcription = await assemblyAIService.transcribeAudio(
+      audioFile.path,
+      (progress) => {
+        progressBroadcaster.sendProgress(sseClientId, {
+          stage: 'transcription',
+          progress: progress * 100,
+          message: `Transcribiendo audio: ${Math.round(progress * 100)}%`,
+          auditId
+        });
+      }
+    );
+
+    await databaseService.saveTranscription(auditId, transcription);
+
+    progressBroadcaster.sendProgress(sseClientId, {
+      stage: 'vision',
+      progress: 0,
+      message: 'Analizando imágenes...',
+      auditId
+    });
+
+    const imageAnalyses = await openAIService.analyzeImages(
+      imageFiles.map(f => f.path),
+      auditInput.callType,
+      (current, total) => {
+        const progress = (current / total) * 100;
+        progressBroadcaster.sendProgress(sseClientId, {
+          stage: 'vision',
+          progress,
+          message: `Analizando imagen ${current} de ${total}`,
+          auditId
+        });
+      }
+    );
+
+    await databaseService.saveImageAnalyses(auditId, imageAnalyses);
+
+    progressBroadcaster.sendProgress(sseClientId, {
+      stage: 'evaluation',
+      progress: 0,
+      message: 'Evaluando llamada...',
+      auditId
+    });
+
+    const evaluation = await evaluatorService.evaluateCall(
+      auditInput,
+      transcription,
+      imageAnalyses,
+      (progress) => {
+        progressBroadcaster.sendProgress(sseClientId, {
+          stage: 'evaluation',
+          progress: progress * 100,
+          message: `Evaluando: ${Math.round(progress * 100)}%`,
+          auditId
+        });
+      }
+    );
+
+    progressBroadcaster.sendProgress(sseClientId, {
+      stage: 'excel',
+      progress: 0,
+      message: 'Generando reporte Excel...',
+      auditId
+    });
+
+    const excelFilename = await excelService.generateExcelReport(auditInput, evaluation);
+
+    progressBroadcaster.sendProgress(sseClientId, {
+      stage: 'excel',
+      progress: 100,
+      message: 'Reporte Excel generado',
+      auditId
+    });
+
+    const totalCost = costCalculatorService.calculateTotalCost(
+      transcription,
+      imageAnalyses,
+      evaluation
+    );
+
+    await databaseService.saveEvaluation(auditId, {
+      ...evaluation,
+      excel_filename: excelFilename
+    });
+
+    await databaseService.saveAPICosts(auditId, totalCost);
+
+    const processingTime = Math.round((Date.now() - startTime) / 1000);
+
+    await databaseService.updateAuditStatus(auditId, 'completed', processingTime);
+
+    await databaseService.logAuditActivity(
+      auditId,
+      req.user!.id,
+      'completed',
+      null,
+      req.ip,
+      req.headers['user-agent']
+    );
+
+    progressBroadcaster.sendProgress(sseClientId, {
+      stage: 'complete',
+      progress: 100,
+      message: 'Auditoría completada',
+      auditId
+    });
+
+    res.json({
+      ...evaluation,
+      excelUrl: `/results/${excelFilename}`,
+      auditId,
+      costs: totalCost
+    });
+
+    if (fs.existsSync(audioFile.path)) fs.unlinkSync(audioFile.path);
+    imageFiles.forEach(file => {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    });
+
   } catch (error: any) {
-    logger.error('Error downloading file:', error);
-    res.status(500).json({ error: 'Error al descargar archivo' });
+    logger.error('Evaluation error:', error);
+
+    if (auditId) {
+      await databaseService.updateAuditStatus(auditId, 'error', null, error.message);
+      
+      await databaseService.logAuditActivity(
+        auditId,
+        req.user!.id,
+        'error',
+        error.message,
+        req.ip,
+        req.headers['user-agent']
+      );
+    }
+
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const audioFile = files.audio?.[0];
+    const imageFiles = files.images || [];
+
+    if (audioFile && fs.existsSync(audioFile.path)) {
+      fs.unlinkSync(audioFile.path);
+    }
+    imageFiles.forEach(file => {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    });
+
+    res.status(500).json({
+      error: 'Error al procesar la evaluación',
+      details: error.message
+    });
   }
 });
 
 // ============================================
-// ADMIN USER MANAGEMENT
+// USER MANAGEMENT ENDPOINTS
 // ============================================
 
 app.get('/api/admin/users', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
@@ -504,7 +578,7 @@ app.get('/api/admin/users', authenticateUser, requireAdmin, async (req: Request,
       return res.status(500).json({ error: 'Error al obtener usuarios' });
     }
 
-    res.json(users);
+    res.json({ users: users || [] });
   } catch (error: any) {
     logger.error('Error fetching users:', error);
     res.status(500).json({ error: 'Error al obtener usuarios' });
@@ -517,11 +591,6 @@ app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request
 
     if (!email || !password || !full_name || !role) {
       return res.status(400).json({ error: 'Todos los campos son requeridos' });
-    }
-
-    const validRoles = ['admin', 'supervisor', 'analyst'];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({ error: 'Rol inválido' });
     }
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -552,12 +621,14 @@ app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request
 
     if (dbError) {
       logger.error('Error creating user in database:', dbError);
+      
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+      
       return res.status(500).json({ error: 'Error al crear usuario en base de datos' });
     }
 
     logger.success('User created successfully', { userId: userData.id, email });
-    res.status(201).json(userData);
+    res.json(userData);
   } catch (error: any) {
     logger.error('Error creating user:', error);
     res.status(500).json({ error: 'Error al crear usuario' });
@@ -567,13 +638,10 @@ app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request
 app.put('/api/admin/users/:userId', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const { email, full_name, role, password } = req.body;
+    const { email, password, full_name, role } = req.body;
 
-    if (role) {
-      const validRoles = ['admin', 'supervisor', 'analyst'];
-      if (!validRoles.includes(role)) {
-        return res.status(400).json({ error: 'Rol inválido' });
-      }
+    if (userId === req.user!.id && role && role !== req.user!.role) {
+      return res.status(400).json({ error: 'No puedes cambiar tu propio rol' });
     }
 
     const { data: userData, error: dbError } = await supabaseAdmin
@@ -802,15 +870,15 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 // Iniciar servidor
 app.listen(PORT, () => {
-  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   logger.info(`🚀 SERVER STARTED ON PORT ${PORT}`);
-  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`🌐 CORS origins: ${allowedOrigins.join(', ')}`);
   logger.info(`🤖 OpenAI API: ${process.env.OPENAI_API_KEY ? '✓ Configured' : '✗ Missing'}`);
   logger.info(`🎤 AssemblyAI API: ${process.env.ASSEMBLYAI_API_KEY ? '✓ Configured' : '✗ Missing'}`);
   logger.info(`💾 Supabase: ${process.env.SUPABASE_URL ? '✓ Configured' : '✗ Missing'}`);
-  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
 
 export default app;
