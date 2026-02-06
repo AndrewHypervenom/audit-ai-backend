@@ -26,6 +26,7 @@ Thumbs.db
 # Uploads y resultados (archivos temporales)
 uploads/
 results/
+scripts/
 *.wav
 *.mp3
 *.xlsx

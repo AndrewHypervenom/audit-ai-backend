@@ -13,7 +13,7 @@ class ExcelService {
       .substring(0, 100);
   }
 
-  // ✅ MODIFICADO: Retorna { filename, buffer } en lugar de escribir a disco
+  // ✅ Retorna { filename, buffer } en memoria
   async generateExcelReport(
     auditInput: AuditInput,
     evaluation: Omit<EvaluationResult, 'excelUrl'>
@@ -25,12 +25,10 @@ class ExcelService {
       workbook.creator = 'Audit AI System';
       workbook.created = new Date();
 
-      // Crear hoja "Analisis"
       const sheet = workbook.addWorksheet('Analisis');
 
       this.createAnalysisSheet(sheet, auditInput, evaluation);
 
-      // ✅ CAMBIO: Generar buffer en memoria en lugar de escribir a disco
       const cleanExecutiveId = this.sanitizeFilename(auditInput.executiveId);
       const filename = `auditoria_${cleanExecutiveId}_${Date.now()}.xlsx`;
 
@@ -46,12 +44,26 @@ class ExcelService {
     }
   }
 
+  // ============================================
+  // ESTRUCTURA SIN columnas Bloques/Tópicos/Ponderación
+  // ============================================
+  // Columna 1: Folio
+  // Columna 2: Nombre del Ejecutivo
+  // Columna 3: ID Ejecutivo
+  // Columna 4: Analista de Calidad
+  // Columna 5: Fecha de Llamada
+  // Columna 6: Fecha de Evaluación
+  // Columna 7: Duración de la llamada
+  // Columna 8: Tipo de llamada
+  // Columnas 9-39: Tópicos de evaluación (31 columnas)
+  // Columna 40: Observaciones generales
+  // ============================================
+
   private createAnalysisSheet(
     sheet: ExcelJS.Worksheet,
     auditInput: AuditInput,
     evaluation: Omit<EvaluationResult, 'excelUrl'>
   ) {
-    // Obtener criterios para el tipo de llamada
     const criteria = getCriteriaForCallType(auditInput.callType);
 
     // Crear mapa de evaluaciones por tópico
@@ -69,22 +81,23 @@ class ExcelService {
     // ============================================
     // FILA 1: ENCABEZADOS DE BLOQUES (merged cells)
     // ============================================
+    // Columnas de info (1-8) no tienen encabezado de bloque
+    // Tópicos empiezan en columna 9
     
     const row1 = sheet.getRow(1);
     row1.height = 25;
 
-    // Definir rangos de bloques EXACTOS según CSV
+    // Rangos de bloques AJUSTADOS (restamos 3 a cada posición original)
     const blockRanges = {
-      'Falcon': { start: 12, end: 18 },
-      'Front': { start: 19, end: 25 },
-      'Vcas': { start: 26, end: 31 },
-      'Vision': { start: 32, end: 35 },
-      'VRM': { start: 36, end: 37 },
-      'B.I': { start: 38, end: 38 },
-      'Manejo de llamada': { start: 39, end: 42 }
+      'Falcon':            { start: 9,  end: 15 },
+      'Front':             { start: 16, end: 22 },
+      'Vcas':              { start: 23, end: 28 },
+      'Vision':            { start: 29, end: 32 },
+      'VRM':               { start: 33, end: 34 },
+      'B.I':               { start: 35, end: 35 },
+      'Manejo de llamada': { start: 36, end: 39 }
     };
 
-    // Crear encabezados de bloques en fila 1
     Object.entries(blockRanges).forEach(([blockName, range]) => {
       const startColLetter = this.getColumnLetter(range.start);
       const endColLetter = this.getColumnLetter(range.end);
@@ -105,11 +118,9 @@ class ExcelService {
     const row2 = sheet.getRow(2);
     row2.height = 80;
 
-    // Definir TODOS los encabezados en orden exacto
+    // Encabezados SIN Bloques, Tópicos, Ponderación
     const allHeaders = [
-      'Bloques',
-      'Tópicos',
-      'Ponderación',
+      // Columnas 1-8: Información general
       'Folio',
       'Nombre del Ejecutivo',
       'ID Ejecutivo',
@@ -118,6 +129,7 @@ class ExcelService {
       'Fecha de Evaluación',
       'Duración de la llamada',
       'Tipo de llamada',
+      // Columnas 9-39: Tópicos de evaluación (31 columnas)
       'Cierre correcto del caso',
       'Creación y llenado correcto del caso: (creación correcto del caso, selección de casillas, calificación de transacciones, comentarios correctos)',
       'Ingresa a HOTLIST_APROBAR / Ingresa a HOTLIST_Rechazar',
@@ -149,10 +161,10 @@ class ExcelService {
       'Educación, frases de conexión, comunicación efectiva y escucha activa',
       'Control de llamada y Puntualidad',
       'Autentica correctamente',
+      // Columna 40: Observaciones
       'Observaciones generales'
     ];
 
-    // Aplicar encabezados
     allHeaders.forEach((header, idx) => {
       const cell = row2.getCell(idx + 1);
       cell.value = header;
@@ -169,22 +181,15 @@ class ExcelService {
     const row3 = sheet.getRow(3);
     row3.height = 20;
 
-    // Columnas 1-3: Bloques, Tópicos, Ponderación headers (vacías en fila 3)
-    for (let i = 1; i <= 3; i++) {
+    // Columnas 1-8: Información general (vacías en fila 3)
+    for (let i = 1; i <= 8; i++) {
       const cell = row3.getCell(i);
       cell.value = '';
       cell.border = this.getAllBorders();
     }
 
-    // Columnas 4-11: Información general (vacías en fila 3)
-    for (let i = 4; i <= 11; i++) {
-      const cell = row3.getCell(i);
-      cell.value = '';
-      cell.border = this.getAllBorders();
-    }
-
-    // Columnas 12-42: Ponderación de cada tópico
-    let colNum = 12;
+    // Columnas 9-39: Ponderación de cada tópico
+    let colNum = 9;
     criteria.forEach(block => {
       block.topics.forEach(topic => {
         const cell = row3.getCell(colNum);
@@ -209,8 +214,8 @@ class ExcelService {
       });
     });
 
-    // Columna 43: Observaciones (vacía en fila 3)
-    const obsHeaderCell = row3.getCell(43);
+    // Columna 40: Observaciones (vacía en fila 3)
+    const obsHeaderCell = row3.getCell(40);
     obsHeaderCell.value = '';
     obsHeaderCell.border = this.getAllBorders();
 
@@ -221,104 +226,50 @@ class ExcelService {
     const row4 = sheet.getRow(4);
     row4.height = 25;
 
-    // Columna 1: Bloques (merge vertical para todos los tópicos de cada bloque)
-    let currentRow = 4;
-    criteria.forEach(block => {
-      const topicsCount = block.topics.length;
-      if (topicsCount > 0) {
-        if (topicsCount > 1) {
-          sheet.mergeCells(currentRow, 1, currentRow + topicsCount - 1, 1);
-        }
-        const cell = sheet.getCell(currentRow, 1);
-        cell.value = block.blockName;
-        cell.font = { bold: true, size: 10 };
-        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-        cell.border = this.getAllBorders();
-        currentRow += topicsCount;
-      }
-    });
+    // Columnas 1-8: Información general
+    const infoCell1 = row4.getCell(1);
+    infoCell1.value = '';
+    infoCell1.alignment = { horizontal: 'center', vertical: 'middle' };
+    infoCell1.border = this.getAllBorders();
 
-    // Columna 2: Tópicos (una fila por cada tópico)
-    currentRow = 4;
-    criteria.forEach(block => {
-      block.topics.forEach(topic => {
-        const cell = sheet.getCell(currentRow, 2);
-        cell.value = topic.topic;
-        cell.font = { size: 9 };
-        cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-        cell.border = this.getAllBorders();
-        currentRow++;
-      });
-    });
+    const infoCell2 = row4.getCell(2);
+    infoCell2.value = auditInput.executiveName;
+    infoCell2.alignment = { horizontal: 'left', vertical: 'middle' };
+    infoCell2.border = this.getAllBorders();
 
-    // Columna 3: Ponderación de cada tópico
-    currentRow = 4;
-    criteria.forEach(block => {
-      block.topics.forEach(topic => {
-        const cell = sheet.getCell(currentRow, 3);
-        
-        if (!topic.applies) {
-          cell.value = 'n/a';
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
-          cell.font = { size: 9, color: { argb: 'FF666666' } };
-        } else if (topic.criticality === 'Crítico') {
-          cell.value = 'Crítico';
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } };
-          cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
-        } else {
-          cell.value = topic.points;
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCCCCC' } };
-          cell.font = { size: 9 };
-        }
-        
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border = this.getAllBorders();
-        currentRow++;
-      });
-    });
+    const infoCell3 = row4.getCell(3);
+    infoCell3.value = auditInput.executiveId;
+    infoCell3.alignment = { horizontal: 'center', vertical: 'middle' };
+    infoCell3.border = this.getAllBorders();
 
-    // Columnas 4-11: Información general (solo en la primera fila de datos)
     const infoCell4 = row4.getCell(4);
-    infoCell4.value = '';
-    infoCell4.alignment = { horizontal: 'center', vertical: 'middle' };
+    infoCell4.value = 'IA';
+    infoCell4.alignment = { horizontal: 'left', vertical: 'middle' };
     infoCell4.border = this.getAllBorders();
 
     const infoCell5 = row4.getCell(5);
-    infoCell5.value = auditInput.executiveName;
-    infoCell5.alignment = { horizontal: 'left', vertical: 'middle' };
+    infoCell5.value = auditInput.callDate;
+    infoCell5.alignment = { horizontal: 'center', vertical: 'middle' };
     infoCell5.border = this.getAllBorders();
 
     const infoCell6 = row4.getCell(6);
-    infoCell6.value = auditInput.executiveId;
+    infoCell6.value = new Date().toLocaleDateString('es-MX');
     infoCell6.alignment = { horizontal: 'center', vertical: 'middle' };
     infoCell6.border = this.getAllBorders();
 
     const infoCell7 = row4.getCell(7);
-    infoCell7.value = 'IA';
-    infoCell7.alignment = { horizontal: 'left', vertical: 'middle' };
+    infoCell7.value = this.formatDuration(auditInput.callDuration ?? undefined);
+    infoCell7.alignment = { horizontal: 'center', vertical: 'middle' };
     infoCell7.border = this.getAllBorders();
 
     const infoCell8 = row4.getCell(8);
-    infoCell8.value = auditInput.callDate;
-    infoCell8.alignment = { horizontal: 'center', vertical: 'middle' };
+    infoCell8.value = auditInput.callType;
+    infoCell8.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
     infoCell8.border = this.getAllBorders();
 
-    const infoCell9 = row4.getCell(9);
-    infoCell9.value = new Date().toLocaleDateString('es-MX');
-    infoCell9.alignment = { horizontal: 'center', vertical: 'middle' };
-    infoCell9.border = this.getAllBorders();
-
-    const infoCell10 = row4.getCell(10);
-    infoCell10.value = this.formatDuration(auditInput.callDuration ?? undefined);
-    infoCell10.alignment = { horizontal: 'center', vertical: 'middle' };
-    infoCell10.border = this.getAllBorders();
-
-    const infoCell11 = row4.getCell(11);
-    infoCell11.value = auditInput.callType;
-    infoCell11.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-    infoCell11.border = this.getAllBorders();
-
-    // Función helper para obtener valor con razón clara
+    // ============================================
+    // HELPER: Obtener valor + justificación REAL
+    // ============================================
     const getTopicValueWithReason = (blockName: string, topicName: string, topic: any) => {
       if (!topic.applies) {
         return { value: 'n/a', reason: 'No aplica para este tipo de llamada', shouldHighlight: false };
@@ -335,23 +286,27 @@ class ExcelService {
         };
       }
 
+      // ✅ CORREGIDO: Usar score.observations (que contiene la justificación real del evaluador)
+      // En evaluator_service.ts: observations: ev.justification
+      const justification = score.observations || score.justification || '';
+
       if (score.score === 0) {
         return { 
           value: 0, 
-          reason: score.justification || 'No cumplió con el criterio', 
+          reason: justification || 'No cumplió con el criterio', 
           shouldHighlight: true 
         };
       }
 
       return { 
         value: score.score, 
-        reason: score.justification || 'Cumplió correctamente', 
+        reason: justification || 'Cumplió correctamente', 
         shouldHighlight: true 
       };
     };
 
-    // Columnas 12-42: Calificaciones de cada tópico
-    colNum = 12;
+    // Columnas 9-39: Calificaciones de cada tópico
+    colNum = 9;
     criteria.forEach(block => {
       block.topics.forEach(topic => {
         const cell = row4.getCell(colNum);
@@ -365,6 +320,7 @@ class ExcelService {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
           cell.font = { size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
           
+          // ✅ Nota con justificación REAL del evaluador
           cell.note = {
             texts: [
               {
@@ -402,8 +358,8 @@ class ExcelService {
       });
     });
 
-    // Columna 43: Observaciones
-    const obsCell = row4.getCell(43);
+    // Columna 40: Observaciones
+    const obsCell = row4.getCell(40);
     
     let observationsText = evaluation.observations;
     
@@ -424,23 +380,23 @@ class ExcelService {
     // AJUSTAR ANCHOS DE COLUMNAS
     // ============================================
 
-    sheet.getColumn(1).width = 15;
-    sheet.getColumn(2).width = 40;
-    sheet.getColumn(3).width = 12;
-    sheet.getColumn(4).width = 8;
-    sheet.getColumn(5).width = 30;
-    sheet.getColumn(6).width = 12;
-    sheet.getColumn(7).width = 25;
-    sheet.getColumn(8).width = 18;
-    sheet.getColumn(9).width = 18;
-    sheet.getColumn(10).width = 12;
-    sheet.getColumn(11).width = 40;
+    // Columnas de información (1-8)
+    sheet.getColumn(1).width = 8;    // Folio
+    sheet.getColumn(2).width = 30;   // Nombre del Ejecutivo
+    sheet.getColumn(3).width = 12;   // ID Ejecutivo
+    sheet.getColumn(4).width = 25;   // Analista de Calidad
+    sheet.getColumn(5).width = 18;   // Fecha de Llamada
+    sheet.getColumn(6).width = 18;   // Fecha de Evaluación
+    sheet.getColumn(7).width = 12;   // Duración
+    sheet.getColumn(8).width = 40;   // Tipo de llamada
 
-    for (let i = 12; i <= 42; i++) {
+    // Columnas de tópicos (9-39)
+    for (let i = 9; i <= 39; i++) {
       sheet.getColumn(i).width = 15;
     }
 
-    sheet.getColumn(43).width = 50;
+    // Columna de observaciones (40)
+    sheet.getColumn(40).width = 50;
   }
 
   private formatDuration(duration?: string): string {
