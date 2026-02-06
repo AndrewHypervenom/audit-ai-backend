@@ -26,17 +26,30 @@ import statsRoutes from './routes/stats.routes.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Crear directorios necesarios
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
-const resultsDir = process.env.RESULTS_DIR || './results';
+// ✅ Crear directorio temporal para uploads (solo temporal durante procesamiento)
+const uploadDir = './tmp/uploads';
 
-[uploadDir, `${uploadDir}/audio`, `${uploadDir}/images`, resultsDir].forEach(dir => {
+[uploadDir, `${uploadDir}/audio`, `${uploadDir}/images`].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 });
 
-// Configurar multer
+// ✅ Helper para limpiar archivos temporales
+const cleanupTempFiles = (filePaths: string[]) => {
+  for (const filePath of filePaths) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        logger.info('🗑️ Temp file cleaned up', { filePath });
+      }
+    } catch (error) {
+      logger.warn('⚠️ Failed to cleanup temp file', { filePath, error });
+    }
+  }
+};
+
+// Configurar multer para archivos temporales
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const folder = file.fieldname === 'audio' ? 'audio' : 'images';
@@ -102,8 +115,8 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Servir archivos estáticos
-app.use('/results', express.static(resultsDir));
+// ✅ ELIMINADO: Ya no se sirven archivos estáticos desde results
+// app.use('/results', express.static(resultsDir));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -206,7 +219,7 @@ app.get('/api/progress/:clientId', (req: Request, res: Response) => {
 });
 
 // ============================================
-// DOWNLOAD ENDPOINT
+// ✅ DOWNLOAD ENDPOINT - AHORA LEE DESDE LA BASE DE DATOS
 // ============================================
 
 app.get('/api/download/:filename', authenticateUser, async (req: Request, res: Response) => {
@@ -219,31 +232,26 @@ app.get('/api/download/:filename', authenticateUser, async (req: Request, res: R
       return res.status(400).json({ error: 'Nombre de archivo inválido' });
     }
 
-    // Construir la ruta completa del archivo
-    const filePath = path.join(resultsDir, filename);
+    logger.info('📥 Downloading Excel from database:', { filename, userId: req.user!.id });
 
-    // Verificar que el archivo existe
-    if (!fs.existsSync(filePath)) {
-      logger.error('File not found:', filePath);
-      return res.status(404).json({ error: 'Archivo no encontrado' });
+    // ✅ NUEVO: Buscar el Excel en la base de datos
+    const excelResult = await databaseService.getExcelData(filename);
+
+    if (!excelResult || !excelResult.excelData) {
+      logger.error('Excel not found in database:', filename);
+      return res.status(404).json({ error: 'Archivo no encontrado en la base de datos' });
     }
 
-    logger.info('Downloading file:', { filename, userId: req.user!.id });
+    // ✅ Convertir base64 a buffer y enviar
+    const excelBuffer = Buffer.from(excelResult.excelData, 'base64');
 
-    // Configurar headers para la descarga
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', excelBuffer.length);
 
-    // Enviar el archivo
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
+    res.send(excelBuffer);
 
-    fileStream.on('error', (error) => {
-      logger.error('Error reading file:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Error al leer el archivo' });
-      }
-    });
+    logger.success('✅ Excel downloaded from database successfully', { filename });
 
   } catch (error: any) {
     logger.error('Error downloading file:', error);
@@ -325,6 +333,9 @@ app.post('/api/evaluate',
     
     const sseClientId = req.body.sseClientId || uuidv4();
 
+    // ✅ Recopilar rutas de archivos temporales para limpiar después
+    const tempFilePaths: string[] = [];
+
     try {
       logger.info('🎬 Starting new audit process...', {
         userId: req.user!.id,
@@ -341,6 +352,10 @@ app.post('/api/evaluate',
 
       const audioFile = files.audio[0];
       const imageFiles = files.images || [];
+
+      // ✅ Registrar archivos temporales para limpieza
+      tempFilePaths.push(audioFile.path);
+      imageFiles.forEach(f => tempFilePaths.push(f.path));
 
       logger.info('📁 Files received:', {
         audio: audioFile.originalname,
@@ -411,12 +426,15 @@ app.post('/api/evaluate',
         percentage: evaluation.percentage
       });
 
-      // 5. Generar Excel
+      // 5. ✅ Generar Excel EN MEMORIA (ya no se guarda en disco)
       progressBroadcaster.progress(sseClientId, 'excel', 90, 'Generando reporte Excel...');
 
-      const excelFilename = await excelService.generateExcelReport(metadata, evaluation);
+      const excelResult = await excelService.generateExcelReport(metadata, evaluation);
 
-      logger.success('✅ Excel report generated', { filename: excelFilename });
+      logger.success('✅ Excel report generated in memory', { 
+        filename: excelResult.filename,
+        sizeKB: (excelResult.buffer.length / 1024).toFixed(1)
+      });
 
       // 6. Calcular costos
       const costs = costCalculatorService.calculateTotalCost(
@@ -430,13 +448,16 @@ app.post('/api/evaluate',
 
       logger.info('💰 Costs calculated:', costs);
 
-      // 7. Actualizar en base de datos
+      // 7. ✅ Actualizar en base de datos (Excel como base64)
+      const excelBase64 = excelResult.buffer.toString('base64');
+      
       await databaseService.completeAudit(auditId, {
         transcription: transcription.text,
         transcriptionWords: transcription.words,
         imageAnalysis: imageAnalysis,
         evaluation,
-        excelPath: excelFilename,
+        excelFilename: excelResult.filename,
+        excelBase64: excelBase64,              // ✅ NUEVO
         processingTimeMs: Date.now() - startTime,
         costs
       });
@@ -460,11 +481,14 @@ app.post('/api/evaluate',
         req.headers['user-agent']
       );
 
+      // ✅ Limpiar archivos temporales (audio e imágenes ya no se necesitan)
+      cleanupTempFiles(tempFilePaths);
+
       // Responder con el ID
       res.json({
         success: true,
         auditId,
-        excelUrl: `/results/${excelFilename}`,
+        excelFilename: excelResult.filename,
         processingTime: Date.now() - startTime,
         costs
       });
@@ -477,6 +501,9 @@ app.post('/api/evaluate',
       }
 
       progressBroadcaster.progress(sseClientId, 'error', 0, `Error: ${error.message}`);
+
+      // ✅ Limpiar archivos temporales incluso en caso de error
+      cleanupTempFiles(tempFilePaths);
 
       res.status(500).json({ 
         error: 'Error procesando auditoría', 
@@ -831,15 +858,16 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 // Iniciar servidor
 app.listen(PORT, () => {
-  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   logger.info(`🚀 SERVER STARTED ON PORT ${PORT}`);
-  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  logger.info(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`🌐 CORS origins: ${allowedOrigins.join(', ')}`);
-  logger.info(`🤖 OpenAI API: ${process.env.OPENAI_API_KEY ? '✓ Configured' : '✗ Missing'}`);
-  logger.info(`🎤 AssemblyAI API: ${process.env.ASSEMBLYAI_API_KEY ? '✓ Configured' : '✗ Missing'}`);
-  logger.info(`💾 Supabase: ${process.env.SUPABASE_URL ? '✓ Configured' : '✗ Missing'}`);
-  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  logger.info(`🤖 OpenAI API: ${process.env.OPENAI_API_KEY ? '✔ Configured' : '✗ Missing'}`);
+  logger.info(`🎤 AssemblyAI API: ${process.env.ASSEMBLYAI_API_KEY ? '✔ Configured' : '✗ Missing'}`);
+  logger.info(`💾 Supabase: ${process.env.SUPABASE_URL ? '✔ Configured' : '✗ Missing'}`);
+  logger.info(`📂 Excel storage: Database (base64)`);
+  logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
 
 export default app;

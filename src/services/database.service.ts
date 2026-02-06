@@ -43,7 +43,8 @@ interface CompleteAuditParams {
   transcriptionWords?: TranscriptWord[];
   imageAnalysis: string;
   evaluation: EvaluationResult;
-  excelPath: string;
+  excelFilename: string;
+  excelBase64: string;        // ✅ NUEVO: Excel como base64
   processingTimeMs: number;
   costs: APICosts;
 }
@@ -72,9 +73,9 @@ class DatabaseService {
           call_date: auditInput.callDate,
           call_duration: auditInput.callDuration || null,
           audio_filename: audioFilename,
-          audio_path: auditInput.audioPath,
+          audio_path: auditInput.audioPath || '',
           image_filenames: imageFilenames,
-          image_paths: auditInput.imagePaths,
+          image_paths: auditInput.imagePaths || [],
           status: 'processing'
         })
         .select('id')
@@ -217,7 +218,7 @@ class DatabaseService {
   }
 
   /**
-   * Completar auditoría con todos los datos - ✅ CORREGIDO
+   * Completar auditoría con todos los datos - ✅ MODIFICADO para guardar Excel en DB
    */
   async completeAudit(auditId: string, params: CompleteAuditParams): Promise<void> {
     try {
@@ -226,7 +227,8 @@ class DatabaseService {
         transcriptionWords,
         imageAnalysis,
         evaluation,
-        excelPath,
+        excelFilename,
+        excelBase64,
         processingTimeMs,
         costs
       } = params;
@@ -258,19 +260,20 @@ class DatabaseService {
         });
       }
 
-      // 3. Guardar evaluación - ✅ CORREGIDO
+      // 3. Guardar evaluación - ✅ AHORA INCLUYE excel_data
       await supabaseAdmin.from('evaluations').insert({
         audit_id: auditId,
-        total_score: evaluation.totalScore,              // ✅ CORRECTO
-        max_possible_score: evaluation.maxPossibleScore, // ✅ CORRECTO
-        percentage: evaluation.percentage,               // ✅ CORRECTO
-        detailed_scores: evaluation.detailedScores,      // ✅ CORRECTO
+        total_score: evaluation.totalScore,
+        max_possible_score: evaluation.maxPossibleScore,
+        percentage: evaluation.percentage,
+        detailed_scores: evaluation.detailedScores,
         observations: evaluation.observations || '',
         recommendations: evaluation.recommendations || [],
         key_moments: evaluation.keyMoments || [],
         openai_response: {},
-        excel_filename: excelPath.split('/').pop() || '',
-        excel_path: excelPath
+        excel_filename: excelFilename,
+        excel_path: excelFilename,
+        excel_data: excelBase64              // ✅ NUEVO: Guardar Excel como base64
       });
 
       // 4. Guardar costos
@@ -288,10 +291,36 @@ class DatabaseService {
 
       if (error) throw error;
 
-      logger.success('✅ Audit completed successfully', { auditId });
+      logger.success('✅ Audit completed successfully (Excel stored in DB)', { auditId });
     } catch (error) {
       logger.error('❌ Error completing audit', error);
       throw error;
+    }
+  }
+
+  /**
+   * ✅ NUEVO: Obtener Excel desde la base de datos
+   */
+  async getExcelData(filename: string): Promise<{ excelData: string; excelFilename: string } | null> {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('evaluations')
+        .select('excel_data, excel_filename')
+        .eq('excel_filename', filename)
+        .single();
+
+      if (error || !data || !data.excel_data) {
+        logger.warn('⚠️ Excel not found in database', { filename });
+        return null;
+      }
+
+      return {
+        excelData: data.excel_data,
+        excelFilename: data.excel_filename
+      };
+    } catch (error) {
+      logger.error('❌ Error getting Excel from database', error);
+      return null;
     }
   }
 
@@ -486,6 +515,7 @@ export const databaseService = {
   markAuditError: (auditId: string, errorMessage: string) => getDatabaseService().markAuditError(auditId, errorMessage),
   getUserAudits: (userId: string, userRole: string, limit?: number, offset?: number) => getDatabaseService().getUserAudits(userId, userRole, limit, offset),
   getAuditById: (auditId: string, userId: string, userRole: string) => getDatabaseService().getAuditById(auditId, userId, userRole),
+  getExcelData: (filename: string) => getDatabaseService().getExcelData(filename),
   logAuditActivity: (auditId: string, userId: string, action: string, details?: any, ip?: string, ua?: string) => 
     getDatabaseService().logAuditActivity(auditId, userId, action, details, ip, ua)
 };

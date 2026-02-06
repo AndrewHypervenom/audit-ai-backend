@@ -2,25 +2,24 @@ import ExcelJS from 'exceljs';
 import { logger } from '../utils/logger.js';
 import type { AuditInput, EvaluationResult } from '../types/index.js';
 import { getCriteriaForCallType, type EvaluationBlock } from '../config/evaluation-criteria.js';
-import * as path from 'path';
-import * as fs from 'fs';
 
 class ExcelService {
-  // ✅ NUEVO: Helper para limpiar nombres de archivos
+  // ✅ Helper para limpiar nombres de archivos
   private sanitizeFilename(text: string): string {
     return text
-      .replace(/\s+/g, '_')  // Reemplazar espacios con _
-      .replace(/\t/g, '_')   // Reemplazar tabs con _
-      .replace(/[^\w\-_.]/g, '') // Remover caracteres especiales
-      .substring(0, 100);    // Limitar longitud
+      .replace(/\s+/g, '_')
+      .replace(/\t/g, '_')
+      .replace(/[^\w\-_.]/g, '')
+      .substring(0, 100);
   }
 
+  // ✅ MODIFICADO: Retorna { filename, buffer } en lugar de escribir a disco
   async generateExcelReport(
     auditInput: AuditInput,
     evaluation: Omit<EvaluationResult, 'excelUrl'>
-  ): Promise<string> {
+  ): Promise<{ filename: string; buffer: Buffer }> {
     try {
-      logger.info('Generating Excel report with correct structure');
+      logger.info('Generating Excel report in memory');
 
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'Audit AI System';
@@ -31,22 +30,16 @@ class ExcelService {
 
       this.createAnalysisSheet(sheet, auditInput, evaluation);
 
-      // Guardar archivo
-      const resultsDir = process.env.RESULTS_DIR || './results';
-      if (!fs.existsSync(resultsDir)) {
-        fs.mkdirSync(resultsDir, { recursive: true });
-      }
-
-      // ✅ CAMBIO: Limpiar el executiveId antes de usarlo en el nombre
+      // ✅ CAMBIO: Generar buffer en memoria en lugar de escribir a disco
       const cleanExecutiveId = this.sanitizeFilename(auditInput.executiveId);
       const filename = `auditoria_${cleanExecutiveId}_${Date.now()}.xlsx`;
-      const filepath = path.join(resultsDir, filename);
 
-      await workbook.xlsx.writeFile(filepath);
+      const arrayBuffer = await workbook.xlsx.writeBuffer();
+      const buffer = Buffer.from(arrayBuffer);
 
-      logger.success('Excel report generated', { filepath });
+      logger.success('Excel report generated in memory', { filename, sizeKB: (buffer.length / 1024).toFixed(1) });
 
-      return filename;
+      return { filename, buffer };
     } catch (error) {
       logger.error('Error generating Excel report', error);
       throw error;
@@ -200,7 +193,7 @@ class ExcelService {
           cell.value = 'n/a';
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
           cell.font = { size: 9, color: { argb: 'FF666666' } };
-        } else if (topic.criticality === 'Crítico') {  // ✅ CORREGIDO: era 'CrÃ­tico'
+        } else if (topic.criticality === 'Crítico') {
           cell.value = 'Crítico';
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } };
           cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -233,7 +226,6 @@ class ExcelService {
     criteria.forEach(block => {
       const topicsCount = block.topics.length;
       if (topicsCount > 0) {
-        // Solo merge si hay más de un tópico
         if (topicsCount > 1) {
           sheet.mergeCells(currentRow, 1, currentRow + topicsCount - 1, 1);
         }
@@ -269,7 +261,7 @@ class ExcelService {
           cell.value = 'n/a';
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
           cell.font = { size: 9, color: { argb: 'FF666666' } };
-        } else if (topic.criticality === 'Crítico') {  // ✅ CORREGIDO: era 'CrÃ­tico'
+        } else if (topic.criticality === 'Crítico') {
           cell.value = 'Crítico';
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } };
           cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
