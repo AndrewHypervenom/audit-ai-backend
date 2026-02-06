@@ -1,111 +1,126 @@
-// backend/src/types/index.ts
-// Tipos y interfaces para el sistema de auditorías
+// frontend/src/types/index.ts
 
-/**
- * Input para crear una nueva auditoría
- * Estos campos coinciden con los del formulario del frontend
- */
-export interface AuditInput {
-  executiveName: string;      // Nombre del ejecutivo/agente
-  executiveId: string;         // ID del ejecutivo/agente
-  callType: string;            // Tipo de llamada: 'FRAUDE' o 'COBRANZA'
-  clientId: string;            // ID del cliente (ej: "6786724")
-  callDate: string;            // Fecha de la llamada en formato ISO
-  callDuration?: string | null; // Duración de la llamada (opcional)
-  audioPath?: string;          // Ruta del archivo de audio
-  imagePaths?: string[];       // Rutas de las imágenes
+// ============================================
+// TIPOS DE AUDITORÍA
+// ============================================
+
+export const CALL_TYPES = ['INBOUND', 'MONITOREO'] as const;
+export type CallType = typeof CALL_TYPES[number];
+
+export interface AuditFormData {
+  executiveName: string;
+  executiveId: string;
+  callType: string;
+  clientId: string;
+  callDate: string;
+  callDuration?: string;
 }
 
-/**
- * ⭐ NUEVO: Palabra individual de la transcripción
- */
-export interface TranscriptWord {
-  start: number;
-  end: number;
-  text: string;
-  speaker: string;
+// ============================================
+// TIPOS DE EVALUACIÓN
+// ============================================
+
+export interface EvaluationCriteria {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  maxScore: number;
+  weight: number;
 }
 
-/**
- * Resultado de la transcripción
- */
-export interface TranscriptResult {
-  text: string;
-  utterances: TranscriptWord[];
-  duration?: number;
-  words?: TranscriptWord[];  // Array opcional de palabras
-  audio_duration?: number;   // Duración del audio en segundos
+export interface DetailedScore {
+  criteriaId: string;
+  criteriaName: string;
+  score: number;
+  maxScore: number;
+  observations: string;
+  evidences: string[];
 }
 
-/**
- * Análisis de imagen
- */
-export interface ImageAnalysis {
-  imagePath: string;
-  system: string;
-  data: any;
-  confidence: number;
-  analysis?: string;  // Campo opcional para análisis de texto
-}
-
-/**
- * Resultado de la evaluación
- */
 export interface EvaluationResult {
   totalScore: number;
   maxPossibleScore: number;
   percentage: number;
-  detailedScores: Array<{
-    criterion: string;
-    score: number;
-    maxScore: number;
-    observations: string;
-  }>;
+  detailedScores: DetailedScore[];
   observations: string;
   recommendations: string[];
-  keyMoments: Array<{
-    timestamp: string;
-    type: string;
-    description: string;
-  }>;
-  excelUrl?: string;
-  totalTokens?: number;  // Tokens totales usados
+  keyMoments: KeyMoment[];
+  excelFilename: string;
 }
 
-/**
- * Costos de APIs
- */
+export interface KeyMoment {
+  timestamp: string;
+  type: 'positive' | 'negative' | 'neutral';
+  description: string;
+  criteriaId?: string;
+}
+
+// ============================================
+// TIPOS DE TRANSCRIPCIÓN
+// ============================================
+
+export interface Utterance {
+  speaker: 'A' | 'B';
+  text: string;
+  start: number;
+  end: number;
+  confidence: number;
+}
+
+export interface TranscriptionResult {
+  id: string;
+  text: string;
+  utterances: Utterance[];
+  audioDuration: number;
+  confidence: number;
+  language: string;
+}
+
+// ============================================
+// TIPOS DE ANÁLISIS DE IMÁGENES
+// ============================================
+
+export interface ImageAnalysisResult {
+  id: string;
+  systemDetected: string;
+  extractedData: Record<string, any>;
+  confidence: number;
+  processingTime: number;
+}
+
+// ============================================
+// TIPOS DE COSTOS API
+// ============================================
+
+export interface APICostsDB {
+  id: string;
+  audit_id: string;
+  transcription_cost: number;
+  image_analysis_cost: number;
+  evaluation_cost: number;
+  total_cost: number;
+  tokens_used: {
+    transcription?: number;
+    imageAnalysis?: number;
+    evaluation?: number;
+    total?: number;
+  };
+  created_at: string;
+}
+
 export interface APICosts {
-  assemblyai: {
-    audioDurationMinutes: number;
-    totalCost: number;
+  transcription: {
+    cost: number;
+    tokens?: number;
   };
-  openai: {
-    images: {
-      count: number;
-      inputTokens: number;
-      outputTokens: number;
-      cost: number;
-    };
-    evaluation: {
-      inputTokens: number;
-      outputTokens: number;
-      cost: number;
-    };
-    totalCost: number;
+  imageAnalysis: {
+    cost: number;
+    tokens?: number;
   };
-  totalCost: number;
-  currency: string;
-  total?: number;  // Alias para totalCost
-}
-
-/**
- * Estado del progreso de procesamiento
- */
-export interface ProcessingProgress {
-  step: 'uploading' | 'database' | 'transcription' | 'analyzing' | 'evaluating' | 'finalizing';
-  status: 'processing' | 'completed' | 'error';
-  message: string;
-  progress?: number;
-  data?: any;
+  evaluation: {
+    cost: number;
+    tokens?: number;
+  };
+  total: number;
 }

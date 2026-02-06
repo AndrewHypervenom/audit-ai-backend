@@ -25,9 +25,16 @@ class ExcelService {
       workbook.creator = 'Audit AI System';
       workbook.created = new Date();
 
-      const sheet = workbook.addWorksheet('Analisis');
+      // ✅ Despachar según tipo de llamada
+      const callTypeUpper = (auditInput.callType || '').toUpperCase().trim();
 
-      this.createAnalysisSheet(sheet, auditInput, evaluation);
+      if (callTypeUpper.includes('MONITOREO')) {
+        const sheet = workbook.addWorksheet('Monitoreo');
+        this.createMonitoreoSheet(sheet, auditInput, evaluation);
+      } else {
+        const sheet = workbook.addWorksheet('Analisis');
+        this.createAnalysisSheet(sheet, auditInput, evaluation);
+      }
 
       const cleanExecutiveId = this.sanitizeFilename(auditInput.executiveId);
       const filename = `auditoria_${cleanExecutiveId}_${Date.now()}.xlsx`;
@@ -45,18 +52,7 @@ class ExcelService {
   }
 
   // ============================================
-  // ESTRUCTURA SIN columnas Bloques/Tópicos/Ponderación
-  // ============================================
-  // Columna 1: Folio
-  // Columna 2: Nombre del Ejecutivo
-  // Columna 3: ID Ejecutivo
-  // Columna 4: Analista de Calidad
-  // Columna 5: Fecha de Llamada
-  // Columna 6: Fecha de Evaluación
-  // Columna 7: Duración de la llamada
-  // Columna 8: Tipo de llamada
-  // Columnas 9-39: Tópicos de evaluación (31 columnas)
-  // Columna 40: Observaciones generales
+  // HOJA INBOUND (horizontal) - SIN CAMBIOS
   // ============================================
 
   private createAnalysisSheet(
@@ -81,13 +77,10 @@ class ExcelService {
     // ============================================
     // FILA 1: ENCABEZADOS DE BLOQUES (merged cells)
     // ============================================
-    // Columnas de info (1-8) no tienen encabezado de bloque
-    // Tópicos empiezan en columna 9
     
     const row1 = sheet.getRow(1);
     row1.height = 25;
 
-    // Rangos de bloques AJUSTADOS (restamos 3 a cada posición original)
     const blockRanges = {
       'Falcon':            { start: 9,  end: 15 },
       'Front':             { start: 16, end: 22 },
@@ -118,9 +111,7 @@ class ExcelService {
     const row2 = sheet.getRow(2);
     row2.height = 80;
 
-    // Encabezados SIN Bloques, Tópicos, Ponderación
     const allHeaders = [
-      // Columnas 1-8: Información general
       'Folio',
       'Nombre del Ejecutivo',
       'ID Ejecutivo',
@@ -129,7 +120,6 @@ class ExcelService {
       'Fecha de Evaluación',
       'Duración de la llamada',
       'Tipo de llamada',
-      // Columnas 9-39: Tópicos de evaluación (31 columnas)
       'Cierre correcto del caso',
       'Creación y llenado correcto del caso: (creación correcto del caso, selección de casillas, calificación de transacciones, comentarios correctos)',
       'Ingresa a HOTLIST_APROBAR / Ingresa a HOTLIST_Rechazar',
@@ -161,7 +151,6 @@ class ExcelService {
       'Educación, frases de conexión, comunicación efectiva y escucha activa',
       'Control de llamada y Puntualidad',
       'Autentica correctamente',
-      // Columna 40: Observaciones
       'Observaciones generales'
     ];
 
@@ -181,14 +170,12 @@ class ExcelService {
     const row3 = sheet.getRow(3);
     row3.height = 20;
 
-    // Columnas 1-8: Información general (vacías en fila 3)
     for (let i = 1; i <= 8; i++) {
       const cell = row3.getCell(i);
       cell.value = '';
       cell.border = this.getAllBorders();
     }
 
-    // Columnas 9-39: Ponderación de cada tópico
     let colNum = 9;
     criteria.forEach(block => {
       block.topics.forEach(topic => {
@@ -214,7 +201,6 @@ class ExcelService {
       });
     });
 
-    // Columna 40: Observaciones (vacía en fila 3)
     const obsHeaderCell = row3.getCell(40);
     obsHeaderCell.value = '';
     obsHeaderCell.border = this.getAllBorders();
@@ -226,7 +212,6 @@ class ExcelService {
     const row4 = sheet.getRow(4);
     row4.height = 25;
 
-    // Columnas 1-8: Información general
     const infoCell1 = row4.getCell(1);
     infoCell1.value = '';
     infoCell1.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -286,8 +271,6 @@ class ExcelService {
         };
       }
 
-      // ✅ CORREGIDO: Usar score.observations (que contiene la justificación real del evaluador)
-      // En evaluator_service.ts: observations: ev.justification
       const justification = score.observations || score.justification || '';
 
       if (score.score === 0) {
@@ -320,7 +303,6 @@ class ExcelService {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
           cell.font = { size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
           
-          // ✅ Nota con justificación REAL del evaluador
           cell.note = {
             texts: [
               {
@@ -380,24 +362,351 @@ class ExcelService {
     // AJUSTAR ANCHOS DE COLUMNAS
     // ============================================
 
-    // Columnas de información (1-8)
-    sheet.getColumn(1).width = 8;    // Folio
-    sheet.getColumn(2).width = 30;   // Nombre del Ejecutivo
-    sheet.getColumn(3).width = 12;   // ID Ejecutivo
-    sheet.getColumn(4).width = 25;   // Analista de Calidad
-    sheet.getColumn(5).width = 18;   // Fecha de Llamada
-    sheet.getColumn(6).width = 18;   // Fecha de Evaluación
-    sheet.getColumn(7).width = 12;   // Duración
-    sheet.getColumn(8).width = 40;   // Tipo de llamada
+    sheet.getColumn(1).width = 8;
+    sheet.getColumn(2).width = 30;
+    sheet.getColumn(3).width = 12;
+    sheet.getColumn(4).width = 25;
+    sheet.getColumn(5).width = 18;
+    sheet.getColumn(6).width = 18;
+    sheet.getColumn(7).width = 12;
+    sheet.getColumn(8).width = 40;
 
-    // Columnas de tópicos (9-39)
     for (let i = 9; i <= 39; i++) {
       sheet.getColumn(i).width = 15;
     }
 
-    // Columna de observaciones (40)
     sheet.getColumn(40).width = 50;
   }
+
+  // ============================================
+  // HOJA MONITOREO (vertical) - NUEVO
+  // Estructura basada en Monitoreo.xlsx
+  // ============================================
+
+  private createMonitoreoSheet(
+    sheet: ExcelJS.Worksheet,
+    auditInput: AuditInput,
+    evaluation: Omit<EvaluationResult, 'excelUrl'>
+  ) {
+    const criteria = getCriteriaForCallType(auditInput.callType);
+
+    // Crear mapa de evaluaciones por tópico
+    const evaluationMap = new Map<string, any>();
+    evaluation.detailedScores.forEach(score => {
+      const match = score.criterion.match(/\[(.*?)\]\s*(.*)/);
+      if (match) {
+        const block = match[1];
+        const topic = match[2];
+        const key = `${block}|${topic}`;
+        evaluationMap.set(key, score);
+      }
+    });
+
+    // Color principal del encabezado (rojo rosado como en Monitoreo.xlsx: #B42648)
+    const HEADER_COLOR = 'FFB42648';
+    const WHITE_FONT = 'FFFFFFFF';
+
+    // Estilos reutilizables
+    const headerStyle: Partial<ExcelJS.Style> = {
+      font: { bold: true, size: 11, color: { argb: WHITE_FONT } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_COLOR } },
+      alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+      border: this.getAllBorders()
+    };
+
+    const dataStyleLeft: Partial<ExcelJS.Style> = {
+      font: { size: 10 },
+      alignment: { horizontal: 'left', vertical: 'middle', wrapText: true },
+      border: this.getAllBorders()
+    };
+
+    const dataStyleCenter: Partial<ExcelJS.Style> = {
+      font: { size: 10 },
+      alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+      border: this.getAllBorders()
+    };
+
+    // ============================================
+    // Anchos de columnas: B=20, C=50, D=15
+    // ============================================
+    sheet.getColumn(1).width = 3;   // A (vacía, margen)
+    sheet.getColumn(2).width = 22;  // B - Bloques
+    sheet.getColumn(3).width = 55;  // C - Rubros
+    sheet.getColumn(4).width = 18;  // D - Ponderación / Calificación
+
+    // ============================================
+    // FILA 2: ENCABEZADO PRINCIPAL
+    // Monitoreo | Nombre del Ejecutivo | ID
+    // ============================================
+    const row2 = sheet.getRow(2);
+    row2.height = 30;
+
+    const cellB2 = sheet.getCell('B2');
+    cellB2.value = 'Monitoreo';
+    Object.assign(cellB2, headerStyle);
+
+    const cellC2 = sheet.getCell('C2');
+    cellC2.value = auditInput.executiveName;
+    Object.assign(cellC2, headerStyle);
+
+    const cellD2 = sheet.getCell('D2');
+    cellD2.value = auditInput.clientId || auditInput.executiveId;
+    Object.assign(cellD2, headerStyle);
+
+    // ============================================
+    // FILA 3: ENCABEZADOS DE COLUMNAS
+    // Bloques | Rubros | Ponderación
+    // ============================================
+    const row3 = sheet.getRow(3);
+    row3.height = 25;
+
+    const cellB3 = sheet.getCell('B3');
+    cellB3.value = 'Bloques';
+    Object.assign(cellB3, headerStyle);
+
+    const cellC3 = sheet.getCell('C3');
+    cellC3.value = 'Rubros';
+    Object.assign(cellC3, headerStyle);
+
+    const cellD3 = sheet.getCell('D3');
+    cellD3.value = 'Ponderación';
+    Object.assign(cellD3, headerStyle);
+
+    // ============================================
+    // FILAS DE DATOS: Iterar criterios verticalmente
+    // ============================================
+    let currentRow = 4;
+
+    // Helper para obtener valor evaluado
+    const getTopicResult = (blockName: string, topicName: string, topic: any) => {
+      if (!topic.applies) {
+        return { value: 'n/a', reason: 'No aplica', isCritical: false };
+      }
+
+      const key = `${blockName}|${topicName}`;
+      const score = evaluationMap.get(key);
+
+      if (!score) {
+        return { 
+          value: 'Sin evaluar', 
+          reason: 'No se encontró evidencia suficiente', 
+          isCritical: topic.criticality === 'Crítico'
+        };
+      }
+
+      const justification = score.observations || score.justification || '';
+
+      if (topic.criticality === 'Crítico') {
+        // Para críticos: mostrar "Cumple" o "No Cumple"
+        const cumple = score.score > 0;
+        return { 
+          value: cumple ? 'Cumple' : 'No Cumple', 
+          reason: justification || (cumple ? 'Cumplió correctamente' : 'No cumplió - Error Crítico'),
+          isCritical: true
+        };
+      }
+
+      return { 
+        value: score.score, 
+        reason: justification || 'Evaluado', 
+        isCritical: false
+      };
+    };
+
+    criteria.forEach(block => {
+      const blockStartRow = currentRow;
+      const topicCount = block.topics.length;
+
+      block.topics.forEach((topic, topicIdx) => {
+        const row = sheet.getRow(currentRow);
+        row.height = topicIdx === 0 && topicCount === 1 ? 40 : 30;
+
+        // Columna B: Bloque (solo en la primera fila, luego se mergea)
+        if (topicIdx === 0) {
+          const cellB = sheet.getCell(`B${currentRow}`);
+          cellB.value = block.blockName;
+          cellB.font = { bold: true, size: 11, color: { argb: WHITE_FONT } };
+          cellB.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_COLOR } };
+          cellB.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cellB.border = this.getAllBorders();
+        }
+
+        // Columna C: Rubro/Tópico
+        const cellC = sheet.getCell(`C${currentRow}`);
+        cellC.value = topic.topic;
+        cellC.font = { size: 10 };
+        cellC.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+        cellC.border = this.getAllBorders();
+
+        // Columna D: Ponderación + Calificación
+        const cellD = sheet.getCell(`D${currentRow}`);
+        const result = getTopicResult(block.blockName, topic.topic, topic);
+
+        if (topic.criticality === 'Crítico') {
+          // Críticos: mostrar "Crítico" como ponderación y resultado en nota
+          cellD.value = 'Crítico';
+          cellD.font = { size: 10, bold: true };
+          cellD.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cellD.border = this.getAllBorders();
+
+          // Color según resultado
+          if (result.value === 'No Cumple') {
+            cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } };
+            cellD.font = { size: 10, bold: true, color: { argb: WHITE_FONT } };
+          } else if (result.value === 'Cumple') {
+            cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } };
+            cellD.font = { size: 10, bold: true, color: { argb: WHITE_FONT } };
+          }
+        } else if (!topic.applies) {
+          cellD.value = 'n/a';
+          cellD.font = { size: 10, color: { argb: 'FF666666' } };
+          cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+          cellD.alignment = { horizontal: 'center', vertical: 'middle' };
+          cellD.border = this.getAllBorders();
+        } else {
+          // Numéricos: mostrar calificación obtenida
+          cellD.value = result.value;
+          cellD.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cellD.border = this.getAllBorders();
+
+          if (typeof result.value === 'number') {
+            const maxPoints = typeof topic.points === 'number' ? topic.points : 0;
+            if (result.value === maxPoints) {
+              // Puntaje completo - verde suave
+              cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+              cellD.font = { size: 10, bold: true, color: { argb: 'FF155724' } };
+            } else if (result.value === 0) {
+              // Cero - rojo suave
+              cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8D7DA' } };
+              cellD.font = { size: 10, bold: true, color: { argb: 'FF721C24' } };
+            } else {
+              // Parcial - amarillo suave
+              cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
+              cellD.font = { size: 10, bold: true, color: { argb: 'FF856404' } };
+            }
+          }
+        }
+
+        // Agregar nota con justificación si hay evaluación
+        if (result.reason && result.reason !== 'No aplica') {
+          const maxPtsText = typeof topic.points === 'number' ? `/${topic.points}` : '';
+          cellD.note = {
+            texts: [
+              {
+                font: { bold: true, size: 10, name: 'Calibri' },
+                text: `Ponderación: ${topic.criticality === 'Crítico' ? 'Crítico' : topic.points}${maxPtsText}\n`
+              },
+              {
+                font: { size: 10, name: 'Calibri' },
+                text: result.reason
+              }
+            ],
+            margins: {
+              insetmode: 'custom',
+              inset: [0.1, 0.1, 0.1, 0.1]
+            }
+          };
+        }
+
+        currentRow++;
+      });
+
+      // Merge celdas de bloque si hay más de un tópico
+      if (topicCount > 1) {
+        sheet.mergeCells(`B${blockStartRow}:B${blockStartRow + topicCount - 1}`);
+      }
+    });
+
+    // ============================================
+    // FILA TOTAL
+    // ============================================
+    const totalStartRow = currentRow;
+
+    // Merge C para "Total"
+    sheet.mergeCells(`C${totalStartRow}:C${totalStartRow + 1}`);
+    const cellCTotal = sheet.getCell(`C${totalStartRow}`);
+    cellCTotal.value = 'Total';
+    cellCTotal.font = { bold: true, size: 12, color: { argb: WHITE_FONT } };
+    cellCTotal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_COLOR } };
+    cellCTotal.alignment = { horizontal: 'center', vertical: 'middle' };
+    cellCTotal.border = this.getAllBorders();
+
+    // Merge D para el puntaje total
+    sheet.mergeCells(`D${totalStartRow}:D${totalStartRow + 1}`);
+    const cellDTotal = sheet.getCell(`D${totalStartRow}`);
+    cellDTotal.value = `${evaluation.totalScore} / ${evaluation.maxPossibleScore}`;
+    cellDTotal.font = { bold: true, size: 12, color: { argb: WHITE_FONT } };
+    cellDTotal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_COLOR } };
+    cellDTotal.alignment = { horizontal: 'center', vertical: 'middle' };
+    cellDTotal.border = this.getAllBorders();
+
+    // Bordes para filas de total
+    sheet.getCell(`B${totalStartRow}`).border = this.getAllBorders();
+    sheet.getCell(`B${totalStartRow + 1}`).border = this.getAllBorders();
+    sheet.getCell(`C${totalStartRow + 1}`).border = this.getAllBorders();
+    sheet.getCell(`D${totalStartRow + 1}`).border = this.getAllBorders();
+
+    sheet.getRow(totalStartRow).height = 20;
+    sheet.getRow(totalStartRow + 1).height = 20;
+
+    currentRow = totalStartRow + 2;
+
+    // ============================================
+    // FILA OBSERVACIONES
+    // ============================================
+    const obsStartRow = currentRow;
+
+    // Merge B para "Observaciones"
+    sheet.mergeCells(`B${obsStartRow}:B${obsStartRow + 2}`);
+    const cellBObs = sheet.getCell(`B${obsStartRow}`);
+    cellBObs.value = 'Observaciones';
+    cellBObs.font = { bold: true, size: 11, color: { argb: WHITE_FONT } };
+    cellBObs.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_COLOR } };
+    cellBObs.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cellBObs.border = this.getAllBorders();
+
+    // Merge C-D para contenido de observaciones
+    sheet.mergeCells(`C${obsStartRow}:D${obsStartRow + 2}`);
+    const cellCObs = sheet.getCell(`C${obsStartRow}`);
+
+    let observationsText = evaluation.observations || '';
+
+    if (evaluation.recommendations && evaluation.recommendations.length > 0) {
+      observationsText += '\n\nRecomendaciones:\n';
+      evaluation.recommendations.forEach((rec, idx) => {
+        observationsText += `${idx + 1}. ${rec}\n`;
+      });
+    }
+
+    if (evaluation.keyMoments && evaluation.keyMoments.length > 0) {
+      observationsText += '\nMomentos clave:\n';
+      evaluation.keyMoments.forEach(moment => {
+        const formattedTimestamp = this.formatTimestamp(moment.timestamp);
+        observationsText += `[${formattedTimestamp}] ${moment.type}: ${moment.description}\n`;
+      });
+    }
+
+    cellCObs.value = observationsText;
+    cellCObs.font = { size: 10 };
+    cellCObs.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+    cellCObs.border = this.getAllBorders();
+
+    // Altura de filas de observaciones
+    sheet.getRow(obsStartRow).height = 25;
+    sheet.getRow(obsStartRow + 1).height = 25;
+    sheet.getRow(obsStartRow + 2).height = 25;
+
+    // Bordes adicionales para celdas mergeadas
+    for (let r = obsStartRow; r <= obsStartRow + 2; r++) {
+      sheet.getCell(`B${r}`).border = this.getAllBorders();
+      sheet.getCell(`C${r}`).border = this.getAllBorders();
+      sheet.getCell(`D${r}`).border = this.getAllBorders();
+    }
+  }
+
+  // ============================================
+  // HELPERS COMPARTIDOS
+  // ============================================
 
   private formatDuration(duration?: string): string {
     if (!duration) return 'N/A';

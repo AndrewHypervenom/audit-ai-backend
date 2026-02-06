@@ -268,7 +268,6 @@ export const FRAUD_CRITERIA: EvaluationBlock[] = [
   }
 ];
 
-// Criterios para TH CONFIRMA (mantener existentes)
 export const TH_CONFIRMA_CRITERIA: EvaluationBlock[] = [
   {
     blockName: 'Falcon',
@@ -524,14 +523,169 @@ export const TH_CONFIRMA_CRITERIA: EvaluationBlock[] = [
   }
 ];
 
+// ============================================
+// CRITERIOS DE MONITOREO (estructura vertical)
+// Basado en la plantilla Monitoreo.xlsx
+// ============================================
+export const MONITOREO_CRITERIA: EvaluationBlock[] = [
+  {
+    blockName: 'Falcon',
+    topics: [
+      { 
+        topic: 'Califica transacciones, Cierre de caso, Selecciona casillas de acción', 
+        criticality: '-', 
+        points: 20, 
+        applies: true,
+        whatToLookFor: 'En capturas FALCON: transacciones calificadas correctamente, caso cerrado adecuadamente, casillas de acción seleccionadas'
+      }
+    ]
+  },
+  {
+    blockName: 'VRM',
+    topics: [
+      { 
+        topic: 'Califica transacciones/Mantenimiento/Comentario', 
+        criticality: '-', 
+        points: 8, 
+        applies: true,
+        whatToLookFor: 'En capturas VRM: transacciones calificadas, mantenimiento aplicado y comentarios correctos'
+      }
+    ]
+  },
+  {
+    blockName: 'Front',
+    topics: [
+      { 
+        topic: 'Ingresa correctamente los datos del front: Calificación, Subcalificación de llamada, Socio, Correo del cliente, Número de caso, 4 dígitos de la tarjeta, Capturas, Comentario, Subir Excel', 
+        criticality: '-', 
+        points: 15, 
+        applies: true,
+        whatToLookFor: 'En capturas FRONT: verificar que todos los campos estén correctamente llenados (calificación, subcalificación, socio, correo, número de caso, 4 dígitos, capturas, comentario, Excel)'
+      }
+    ]
+  },
+  {
+    blockName: 'Vcas',
+    topics: [
+      { 
+        topic: 'Califica transacciones / Bloqueo', 
+        criticality: '-', 
+        points: 7, 
+        applies: true,
+        whatToLookFor: 'En capturas VCAS: transacciones calificadas correctamente y bloqueo aplicado si corresponde'
+      }
+    ]
+  },
+  {
+    blockName: 'Vision+',
+    topics: [
+      { 
+        topic: 'Comentario en ASHI', 
+        criticality: '-', 
+        points: 3, 
+        applies: true,
+        whatToLookFor: 'En capturas VISION/ASHI: comentarios claros y completos sobre la gestión realizada'
+      },
+      { 
+        topic: 'Bloqueo correcto de la tarjeta', 
+        criticality: '-', 
+        points: 7, 
+        applies: true,
+        whatToLookFor: 'En capturas VISION: tipo de bloqueo correcto aplicado según corresponda'
+      }
+    ]
+  },
+  {
+    blockName: 'BI',
+    topics: [
+      { 
+        topic: 'Levantamiento correcto de ticket', 
+        criticality: '-', 
+        points: 10, 
+        applies: true,
+        whatToLookFor: 'En capturas BI: ticket levantado correctamente con todos los datos completos'
+      }
+    ]
+  },
+  {
+    blockName: 'Manejo de llamada',
+    topics: [
+      { 
+        topic: 'Cumple con el script de llamada', 
+        criticality: '-', 
+        points: 5, 
+        applies: true,
+        whatToLookFor: 'En transcripción: sigue el script completo (saludo, validación, explicación del proceso, cierre)'
+      },
+      { 
+        topic: 'Control de llamada, empatía y frases de conexión', 
+        criticality: '-', 
+        points: 10, 
+        applies: true,
+        whatToLookFor: 'En transcripción: mantiene control de la conversación, usa frases de empatía y conexión con el cliente'
+      },
+      { 
+        topic: 'Cordialidad/Comunicación efectiva', 
+        criticality: '-', 
+        points: 5, 
+        applies: true,
+        whatToLookFor: 'En transcripción: tono cordial, comunicación clara y efectiva durante toda la llamada'
+      },
+      { 
+        topic: 'Escucha activa', 
+        criticality: '-', 
+        points: 10, 
+        applies: true,
+        whatToLookFor: 'En transcripción: demuestra escucha activa, responde adecuadamente a las inquietudes del cliente sin interrumpir'
+      },
+      { 
+        topic: 'Solución al contacto', 
+        criticality: '-', 
+        points: 5, 
+        applies: true,
+        whatToLookFor: 'En transcripción: ofrece solución efectiva al motivo de contacto del cliente'
+      }
+    ]
+  },
+  {
+    blockName: 'Casos críticos',
+    topics: [
+      { 
+        topic: 'Calificación de caso (cierre de caso en falcon)', 
+        criticality: 'Crítico', 
+        points: 'n/a', 
+        applies: true,
+        whatToLookFor: 'En capturas FALCON: caso calificado y cerrado correctamente. Error crítico si no se cumple.'
+      },
+      { 
+        topic: 'Califica tipo de llamada correctamente (calificación a nivel front)', 
+        criticality: 'Crítico', 
+        points: 'n/a', 
+        applies: true,
+        whatToLookFor: 'En capturas FRONT: tipo de llamada calificado correctamente. Error crítico si no se cumple.'
+      },
+      { 
+        topic: 'Bloquea tarjeta en V+ correctamente', 
+        criticality: 'Crítico', 
+        points: 'n/a', 
+        applies: true,
+        whatToLookFor: 'En capturas VISION+: tarjeta bloqueada correctamente cuando corresponde. Error crítico si no se cumple.'
+      }
+    ]
+  }
+];
+
 export function getCriteriaForCallType(callType: string): EvaluationBlock[] {
   const normalizedType = callType.toUpperCase().trim();
   
-  if (normalizedType.includes('FRAUDE')) {
+  if (normalizedType.includes('MONITOREO')) {
+    return MONITOREO_CRITERIA;
+  } else if (normalizedType.includes('FRAUDE')) {
     return FRAUD_CRITERIA;
   } else if (normalizedType.includes('TH CONFIRMA') || normalizedType.includes('TH_CONFIRMA')) {
     return TH_CONFIRMA_CRITERIA;
   }
   
+  // Default: INBOUND usa FRAUD_CRITERIA
   return FRAUD_CRITERIA;
 }
