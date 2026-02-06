@@ -112,6 +112,17 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// ============================================
+// MIDDLEWARE UTF-8
+// ============================================
+
+// Forzar UTF-8 en todas las respuestas
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
