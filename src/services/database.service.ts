@@ -352,7 +352,7 @@ class DatabaseService {
    */
   async deleteAudit(auditId: string, userId: string, userRole: string): Promise<void> {
     try {
-      if (userRole !== 'admin' && userRole !== 'analyst') {
+      if (userRole !== 'admin' && userRole !== 'analyst' && userRole !== 'supervisor') {
         throw new Error('No tienes permisos para eliminar auditorÃ­as');
       }
 
