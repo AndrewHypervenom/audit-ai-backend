@@ -44,7 +44,7 @@ interface CompleteAuditParams {
   imageAnalysis: string;
   evaluation: EvaluationResult;
   excelFilename: string;
-  excelBase64: string;        // ✅ NUEVO: Excel como base64
+  excelBase64: string;        // âœ… NUEVO: Excel como base64
   processingTimeMs: number;
   costs: APICosts;
 }
@@ -56,7 +56,7 @@ class DatabaseService {
   }
 
   /**
-   * Crear una nueva auditoría
+   * Crear una nueva auditorÃ­a
    */
   async createAudit(params: CreateAuditParams): Promise<string> {
     try {
@@ -83,16 +83,16 @@ class DatabaseService {
 
       if (error) throw error;
 
-      logger.success('✅ Audit created in database', { auditId: data.id });
+      logger.success('âœ… Audit created in database', { auditId: data.id });
       return data.id;
     } catch (error) {
-      logger.error('❌ Error creating audit in database', error);
+      logger.error('âŒ Error creating audit in database', error);
       throw error;
     }
   }
 
   /**
-   * Guardar transcripción
+   * Guardar transcripciÃ³n
    */
   async saveTranscription(params: SaveTranscriptionParams): Promise<void> {
     try {
@@ -113,15 +113,15 @@ class DatabaseService {
 
       if (error) throw error;
 
-      logger.success('✅ Transcription saved to database', { auditId });
+      logger.success('âœ… Transcription saved to database', { auditId });
     } catch (error) {
-      logger.error('❌ Error saving transcription', error);
+      logger.error('âŒ Error saving transcription', error);
       throw error;
     }
   }
 
   /**
-   * Guardar análisis de imagen
+   * Guardar anÃ¡lisis de imagen
    */
   async saveImageAnalysis(params: SaveImageAnalysisParams): Promise<void> {
     try {
@@ -143,15 +143,15 @@ class DatabaseService {
 
       if (error) throw error;
 
-      logger.success('✅ Image analysis saved to database', { auditId });
+      logger.success('âœ… Image analysis saved to database', { auditId });
     } catch (error) {
-      logger.error('❌ Error saving image analysis', error);
+      logger.error('âŒ Error saving image analysis', error);
       throw error;
     }
   }
 
   /**
-   * Guardar evaluación completa
+   * Guardar evaluaciÃ³n completa
    */
   async saveEvaluation(params: SaveEvaluationParams): Promise<void> {
     try {
@@ -175,9 +175,9 @@ class DatabaseService {
 
       if (error) throw error;
 
-      logger.success('✅ Evaluation saved to database', { auditId });
+      logger.success('âœ… Evaluation saved to database', { auditId });
     } catch (error) {
-      logger.error('❌ Error saving evaluation', error);
+      logger.error('âŒ Error saving evaluation', error);
       throw error;
     }
   }
@@ -207,18 +207,18 @@ class DatabaseService {
 
       if (error) throw error;
 
-      logger.success('✅ API costs saved to database', { 
+      logger.success('âœ… API costs saved to database', { 
         auditId, 
         totalCost: `$${costs.totalCost.toFixed(4)}` 
       });
     } catch (error) {
-      logger.error('❌ Error saving API costs', error);
+      logger.error('âŒ Error saving API costs', error);
       throw error;
     }
   }
 
   /**
-   * Completar auditoría con todos los datos - ✅ MODIFICADO para guardar Excel en DB
+   * Completar auditorÃ­a con todos los datos - âœ… MODIFICADO para guardar Excel en DB
    */
   async completeAudit(auditId: string, params: CompleteAuditParams): Promise<void> {
     try {
@@ -233,7 +233,7 @@ class DatabaseService {
         costs
       } = params;
 
-      // 1. Guardar transcripción
+      // 1. Guardar transcripciÃ³n
       await supabaseAdmin.from('transcriptions').insert({
         audit_id: auditId,
         full_text: transcription,
@@ -245,8 +245,8 @@ class DatabaseService {
         language: 'es'
       });
 
-      // 2. Guardar análisis de imágenes (si existe)
-      if (imageAnalysis && imageAnalysis !== 'No se proporcionaron imágenes para analizar') {
+      // 2. Guardar anÃ¡lisis de imÃ¡genes (si existe)
+      if (imageAnalysis && imageAnalysis !== 'No se proporcionaron imÃ¡genes para analizar') {
         await supabaseAdmin.from('image_analyses').insert({
           audit_id: auditId,
           image_path: '',
@@ -260,7 +260,7 @@ class DatabaseService {
         });
       }
 
-      // 3. Guardar evaluación - ✅ AHORA INCLUYE excel_data
+      // 3. Guardar evaluaciÃ³n - âœ… AHORA INCLUYE excel_data
       await supabaseAdmin.from('evaluations').insert({
         audit_id: auditId,
         total_score: evaluation.totalScore,
@@ -273,7 +273,7 @@ class DatabaseService {
         openai_response: {},
         excel_filename: excelFilename,
         excel_path: excelFilename,
-        excel_data: excelBase64              // ✅ NUEVO: Guardar Excel como base64
+        excel_data: excelBase64              // âœ… NUEVO: Guardar Excel como base64
       });
 
       // 4. Guardar costos
@@ -291,15 +291,15 @@ class DatabaseService {
 
       if (error) throw error;
 
-      logger.success('✅ Audit completed successfully (Excel stored in DB)', { auditId });
+      logger.success('âœ… Audit completed successfully (Excel stored in DB)', { auditId });
     } catch (error) {
-      logger.error('❌ Error completing audit', error);
+      logger.error('âŒ Error completing audit', error);
       throw error;
     }
   }
 
   /**
-   * ✅ NUEVO: Obtener Excel desde la base de datos
+   * âœ… NUEVO: Obtener Excel desde la base de datos
    */
   async getExcelData(filename: string): Promise<{ excelData: string; excelFilename: string } | null> {
     try {
@@ -310,7 +310,7 @@ class DatabaseService {
         .single();
 
       if (error || !data || !data.excel_data) {
-        logger.warn('⚠️ Excel not found in database', { filename });
+        logger.warn('âš ï¸ Excel not found in database', { filename });
         return null;
       }
 
@@ -319,13 +319,13 @@ class DatabaseService {
         excelFilename: data.excel_filename
       };
     } catch (error) {
-      logger.error('❌ Error getting Excel from database', error);
+      logger.error('âŒ Error getting Excel from database', error);
       return null;
     }
   }
 
   /**
-   * Marcar auditoría como error
+   * Marcar auditorÃ­a como error
    */
   async markAuditError(auditId: string, errorMessage: string): Promise<void> {
     try {
@@ -340,20 +340,20 @@ class DatabaseService {
 
       if (error) throw error;
 
-      logger.warn('⚠️ Audit marked as error', { auditId, errorMessage });
+      logger.warn('âš ï¸ Audit marked as error', { auditId, errorMessage });
     } catch (error) {
-      logger.error('❌ Error marking audit as error', error);
+      logger.error('âŒ Error marking audit as error', error);
       throw error;
     }
   }
 
   /**
-   * Eliminar una auditoría y todos sus datos relacionados
+   * Eliminar una auditorÃ­a y todos sus datos relacionados
    */
   async deleteAudit(auditId: string, userId: string, userRole: string): Promise<void> {
     try {
       if (userRole !== 'admin' && userRole !== 'analyst') {
-        throw new Error('No tienes permisos para eliminar auditorías');
+        throw new Error('No tienes permisos para eliminar auditorÃ­as');
       }
 
       const { data: audit, error: fetchError } = await supabaseAdmin
@@ -363,7 +363,7 @@ class DatabaseService {
         .single();
 
       if (fetchError || !audit) {
-        throw new Error('Auditoría no encontrada');
+        throw new Error('AuditorÃ­a no encontrada');
       }
 
       const { error: deleteError } = await supabaseAdmin
@@ -373,15 +373,50 @@ class DatabaseService {
 
       if (deleteError) throw deleteError;
 
-      logger.success('✅ Audit deleted successfully', { auditId, userId });
+      logger.success('âœ… Audit deleted successfully', { auditId, userId });
     } catch (error) {
-      logger.error('❌ Error deleting audit', error);
+      logger.error('âŒ Error deleting audit', error);
       throw error;
     }
   }
 
   /**
-   * Obtener todas las auditorías
+   * HELPER: Enriquecer auditorias con info del creador
+   */
+  private async enrichAuditsWithCreatorInfo(audits: any[]): Promise<any[]> {
+    try {
+      if (!audits || audits.length === 0) return audits;
+      const userIds = [...new Set(audits.map(a => a.user_id).filter(Boolean))];
+      if (userIds.length === 0) return audits;
+
+      const { data: users, error } = await supabaseAdmin
+        .from('users')
+        .select('id, full_name, email')
+        .in('id', userIds);
+
+      if (error) {
+        logger.warn('Warning: Error fetching creator info:', error);
+        return audits;
+      }
+
+      const userMap = new Map((users || []).map(u => [u.id, u]));
+
+      return audits.map(audit => {
+        const creator = userMap.get(audit.user_id);
+        return {
+          ...audit,
+          created_by_name: creator?.full_name || creator?.email || 'Desconocido',
+          created_by_email: creator?.email || ''
+        };
+      });
+    } catch (error) {
+      logger.warn('Warning: Error enriching audits with creator info:', error);
+      return audits;
+    }
+  }
+
+  /**
+   * Obtener todas las auditorias (incluye created_by_name y created_by_email)
    */
   async getUserAudits(userId: string, userRole: string, limit = 50, offset = 0) {
     try {
@@ -406,15 +441,18 @@ class DatabaseService {
         return audit;
       });
 
-      return { audits: normalizedData, total: count || 0 };
+      // Enriquecer con info del creador
+      const enrichedData = await this.enrichAuditsWithCreatorInfo(normalizedData);
+
+      return { audits: enrichedData, total: count || 0 };
     } catch (error) {
-      logger.error('❌ Error fetching user audits', error);
+      logger.error('Error fetching user audits', error);
       throw error;
     }
   }
 
   /**
-   * Obtener una auditoría completa con todos sus datos
+   * Obtener una auditorÃ­a completa con todos sus datos
    */
   async getAuditById(auditId: string, userId: string, userRole: string) {
     try {
@@ -450,21 +488,40 @@ class DatabaseService {
         .eq('audit_id', auditId)
         .single();
 
+      // Obtener info del creador
+      let creatorName = 'Desconocido';
+      let creatorEmail = '';
+      if (audit.user_id) {
+        const { data: creator } = await supabaseAdmin
+          .from('users')
+          .select('full_name, email')
+          .eq('id', audit.user_id)
+          .single();
+        if (creator) {
+          creatorName = creator.full_name || creator.email || 'Desconocido';
+          creatorEmail = creator.email || '';
+        }
+      }
+
       return {
-        audit,
+        audit: {
+          ...audit,
+          created_by_name: creatorName,
+          created_by_email: creatorEmail
+        },
         transcription,
         imageAnalyses: imageAnalyses || [],
         evaluation,
         apiCosts
       };
     } catch (error) {
-      logger.error('❌ Error fetching audit by ID', error);
+      logger.error('âŒ Error fetching audit by ID', error);
       throw error;
     }
   }
 
   /**
-   * Registrar actividad de auditoría
+   * Registrar actividad de auditorÃ­a
    */
   async logAuditActivity(
     auditId: string,
@@ -486,9 +543,9 @@ class DatabaseService {
           user_agent: userAgent || null
         });
 
-      logger.info(`📝 Audit activity logged: ${action}`, { auditId, userId });
+      logger.info(`ðŸ“ Audit activity logged: ${action}`, { auditId, userId });
     } catch (error) {
-      logger.warn('⚠️ Failed to log audit activity', error);
+      logger.warn('âš ï¸ Failed to log audit activity', error);
     }
   }
 }
