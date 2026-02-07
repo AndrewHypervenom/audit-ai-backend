@@ -26,7 +26,7 @@ import statsRoutes from './routes/stats.routes.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ Crear directorio temporal para uploads (solo temporal durante procesamiento)
+// âœ… Crear directorio temporal para uploads (solo temporal durante procesamiento)
 const uploadDir = './tmp/uploads';
 
 [uploadDir, `${uploadDir}/audio`, `${uploadDir}/images`].forEach(dir => {
@@ -35,16 +35,16 @@ const uploadDir = './tmp/uploads';
   }
 });
 
-// ✅ Helper para limpiar archivos temporales
+// âœ… Helper para limpiar archivos temporales
 const cleanupTempFiles = (filePaths: string[]) => {
   for (const filePath of filePaths) {
     try {
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
-        logger.info('🗑️ Temp file cleaned up', { filePath });
+        logger.info('ðŸ—‘ï¸ Temp file cleaned up', { filePath });
       }
     } catch (error) {
-      logger.warn('⚠️ Failed to cleanup temp file', { filePath, error });
+      logger.warn('âš ï¸ Failed to cleanup temp file', { filePath, error });
     }
   }
 };
@@ -79,7 +79,7 @@ const upload = multer({
       if (allowedMimes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error('Solo se permiten imágenes JPEG o PNG'));
+        cb(new Error('Solo se permiten imÃ¡genes JPEG o PNG'));
       }
     } else {
       cb(null, true);
@@ -87,20 +87,23 @@ const upload = multer({
   }
 });
 
-// Middleware - CORS actualizado para múltiples orígenes
+// Middleware - CORS actualizado para multiples origenes
 const allowedOrigins = [
   'https://audit-ai-gamma.vercel.app',
   'http://localhost:5173',
   'http://localhost:5174',
   'https://auditoria-kappa.vercel.app',
   process.env.CORS_ORIGIN
-].filter(Boolean);
+].filter(Boolean) as string[];
 
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.includes(origin)) {
+    // Permitir cualquier subdominio de vercel.app
+    if (origin.endsWith('.vercel.app') || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else if (origin.startsWith('http://localhost:')) {
       callback(null, true);
     } else {
       logger.warn(`CORS blocked origin: ${origin}`);
@@ -126,7 +129,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ ELIMINADO: Ya no se sirven archivos estáticos desde results
+// âœ… ELIMINADO: Ya no se sirven archivos estÃ¡ticos desde results
 // app.use('/results', express.static(resultsDir));
 
 // Health check
@@ -137,6 +140,15 @@ app.get('/health', (req, res) => {
     openai: !!process.env.OPENAI_API_KEY,
     assemblyai: !!process.env.ASSEMBLYAI_API_KEY,
     supabase: !!process.env.SUPABASE_URL
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    version: '2.1.0',
+    cors_origins: allowedOrigins.length
   });
 });
 
@@ -159,7 +171,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email y contraseña son requeridos' });
+      return res.status(400).json({ error: 'Email y contraseÃ±a son requeridos' });
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -169,7 +181,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 
     if (error) {
       logger.error('Login error:', error);
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+      return res.status(401).json({ error: 'Credenciales invÃ¡lidas' });
     }
 
     res.json({
@@ -178,7 +190,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.error('Login error:', error);
-    res.status(500).json({ error: 'Error al iniciar sesión' });
+    res.status(500).json({ error: 'Error al iniciar sesiÃ³n' });
   }
 });
 
@@ -188,13 +200,13 @@ app.post('/api/auth/logout', authenticateUser, async (req: Request, res: Respons
 
     if (error) {
       logger.error('Logout error:', error);
-      return res.status(500).json({ error: 'Error al cerrar sesión' });
+      return res.status(500).json({ error: 'Error al cerrar sesiÃ³n' });
     }
 
-    res.json({ message: 'Sesión cerrada exitosamente' });
+    res.json({ message: 'SesiÃ³n cerrada exitosamente' });
   } catch (error: any) {
     logger.error('Logout error:', error);
-    res.status(500).json({ error: 'Error al cerrar sesión' });
+    res.status(500).json({ error: 'Error al cerrar sesiÃ³n' });
   }
 });
 
@@ -230,7 +242,7 @@ app.get('/api/progress/:clientId', (req: Request, res: Response) => {
 });
 
 // ============================================
-// ✅ DOWNLOAD ENDPOINT - AHORA LEE DESDE LA BASE DE DATOS
+// âœ… DOWNLOAD ENDPOINT - AHORA LEE DESDE LA BASE DE DATOS
 // ============================================
 
 app.get('/api/download/:filename', authenticateUser, async (req: Request, res: Response) => {
@@ -240,12 +252,12 @@ app.get('/api/download/:filename', authenticateUser, async (req: Request, res: R
     // Validar que el filename no contenga caracteres peligrosos
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
       logger.warn('Attempt to access file with invalid path:', filename);
-      return res.status(400).json({ error: 'Nombre de archivo inválido' });
+      return res.status(400).json({ error: 'Nombre de archivo invÃ¡lido' });
     }
 
-    logger.info('📥 Downloading Excel from database:', { filename, userId: req.user!.id });
+    logger.info('ðŸ“¥ Downloading Excel from database:', { filename, userId: req.user!.id });
 
-    // ✅ NUEVO: Buscar el Excel en la base de datos
+    // âœ… NUEVO: Buscar el Excel en la base de datos
     const excelResult = await databaseService.getExcelData(filename);
 
     if (!excelResult || !excelResult.excelData) {
@@ -253,7 +265,7 @@ app.get('/api/download/:filename', authenticateUser, async (req: Request, res: R
       return res.status(404).json({ error: 'Archivo no encontrado en la base de datos' });
     }
 
-    // ✅ Convertir base64 a buffer y enviar
+    // âœ… Convertir base64 a buffer y enviar
     const excelBuffer = Buffer.from(excelResult.excelData, 'base64');
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -262,7 +274,7 @@ app.get('/api/download/:filename', authenticateUser, async (req: Request, res: R
 
     res.send(excelBuffer);
 
-    logger.success('✅ Excel downloaded from database successfully', { filename });
+    logger.success('âœ… Excel downloaded from database successfully', { filename });
 
   } catch (error: any) {
     logger.error('Error downloading file:', error);
@@ -296,7 +308,7 @@ app.get('/api/audits', authenticateUser, async (req: Request, res: Response) => 
     });
   } catch (error: any) {
     logger.error('Error fetching audits', error);
-    res.status(500).json({ error: 'Error al obtener auditorías' });
+    res.status(500).json({ error: 'Error al obtener auditorÃ­as' });
   }
 });
 
@@ -319,19 +331,19 @@ app.get('/api/audits/:auditId', authenticateUser, async (req: Request, res: Resp
   } catch (error: any) {
     logger.error('Error fetching audit', error);
     
-    if (error.message === 'Audit not found' || error.message === 'Auditoría no encontrada') {
-      return res.status(404).json({ error: 'Auditoría no encontrada' });
+    if (error.message === 'Audit not found' || error.message === 'AuditorÃ­a no encontrada') {
+      return res.status(404).json({ error: 'AuditorÃ­a no encontrada' });
     }
     
     if (error.message === 'Access denied' || error.message === 'Acceso denegado') {
       return res.status(403).json({ error: 'Acceso denegado' });
     }
     
-    res.status(500).json({ error: 'Error al obtener auditoría' });
+    res.status(500).json({ error: 'Error al obtener auditorÃ­a' });
   }
 });
 
-// POST /api/evaluate - Crear nueva auditoría
+// POST /api/evaluate - Crear nueva auditorÃ­a
 app.post('/api/evaluate', 
   authenticateUser,
   upload.fields([
@@ -344,11 +356,11 @@ app.post('/api/evaluate',
     
     const sseClientId = req.body.sseClientId || uuidv4();
 
-    // ✅ Recopilar rutas de archivos temporales para limpiar después
+    // âœ… Recopilar rutas de archivos temporales para limpiar despuÃ©s
     const tempFilePaths: string[] = [];
 
     try {
-      logger.info('🎬 Starting new audit process...', {
+      logger.info('ðŸŽ¬ Starting new audit process...', {
         userId: req.user!.id,
         userEmail: req.user!.email,
         sseClientId
@@ -364,11 +376,11 @@ app.post('/api/evaluate',
       const audioFile = files.audio[0];
       const imageFiles = files.images || [];
 
-      // ✅ Registrar archivos temporales para limpieza
+      // âœ… Registrar archivos temporales para limpieza
       tempFilePaths.push(audioFile.path);
       imageFiles.forEach(f => tempFilePaths.push(f.path));
 
-      logger.info('📁 Files received:', {
+      logger.info('ðŸ“ Files received:', {
         audio: audioFile.originalname,
         audioSize: audioFile.size,
         images: imageFiles.length
@@ -385,7 +397,7 @@ app.post('/api/evaluate',
         imagePaths: imageFiles.map(f => f.path)
       };
 
-      logger.info('📋 Audit metadata:', metadata);
+      logger.info('ðŸ“‹ Audit metadata:', metadata);
 
       // 1. Crear entrada en la base de datos
       progressBroadcaster.progress(sseClientId, 'upload', 10, 'Archivos subidos correctamente');
@@ -397,20 +409,20 @@ app.post('/api/evaluate',
         imageFilenames: imageFiles.map(f => f.filename)
       });
 
-      logger.success('✅ Audit record created', { auditId });
+      logger.success('âœ… Audit record created', { auditId });
 
       // 2. Transcribir audio
-      progressBroadcaster.progress(sseClientId, 'transcription', 25, 'Iniciando transcripción...');
+      progressBroadcaster.progress(sseClientId, 'transcription', 25, 'Iniciando transcripciÃ³n...');
       
       const transcription = await assemblyAIService.transcribe(audioFile.path);
 
-      logger.success('✅ Transcription completed', { 
+      logger.success('âœ… Transcription completed', { 
         duration: transcription.audio_duration,
         words: transcription.words?.length 
       });
 
-      // 3. Analizar imágenes con OpenAI
-      progressBroadcaster.progress(sseClientId, 'analysis', 50, 'Analizando imágenes...');
+      // 3. Analizar imÃ¡genes con OpenAI
+      progressBroadcaster.progress(sseClientId, 'analysis', 50, 'Analizando imÃ¡genes...');
 
       const imageAnalyses = imageFiles.length > 0 
         ? await openAIService.analyzeMultipleImages(imageFiles.map(f => f.path))
@@ -418,9 +430,9 @@ app.post('/api/evaluate',
 
       const imageAnalysis = imageAnalyses.length > 0
         ? imageAnalyses.map(img => `${img.system}: ${JSON.stringify(img.data)}`).join('\n\n')
-        : 'No se proporcionaron imágenes para analizar';
+        : 'No se proporcionaron imÃ¡genes para analizar';
 
-      logger.success('✅ Image analysis completed');
+      logger.success('âœ… Image analysis completed');
 
       // 4. Evaluar con criterios
       progressBroadcaster.progress(sseClientId, 'evaluation', 75, 'Evaluando con IA...');
@@ -431,18 +443,18 @@ app.post('/api/evaluate',
         imageAnalyses
       );
 
-      logger.success('✅ Evaluation completed', {
+      logger.success('âœ… Evaluation completed', {
         totalScore: evaluation.totalScore,
         maxPossibleScore: evaluation.maxPossibleScore,
         percentage: evaluation.percentage
       });
 
-      // 5. ✅ Generar Excel EN MEMORIA (ya no se guarda en disco)
+      // 5. âœ… Generar Excel EN MEMORIA (ya no se guarda en disco)
       progressBroadcaster.progress(sseClientId, 'excel', 90, 'Generando reporte Excel...');
 
       const excelResult = await excelService.generateExcelReport(metadata, evaluation);
 
-      logger.success('✅ Excel report generated in memory', { 
+      logger.success('âœ… Excel report generated in memory', { 
         filename: excelResult.filename,
         sizeKB: (excelResult.buffer.length / 1024).toFixed(1)
       });
@@ -457,9 +469,9 @@ app.post('/api/evaluate',
         evaluation.usage?.outputTokens || 0
       );
 
-      logger.info('💰 Costs calculated:', costs);
+      logger.info('ðŸ’° Costs calculated:', costs);
 
-      // 7. ✅ Actualizar en base de datos (Excel como base64)
+      // 7. âœ… Actualizar en base de datos (Excel como base64)
       const excelBase64 = excelResult.buffer.toString('base64');
       
       await databaseService.completeAudit(auditId, {
@@ -468,19 +480,19 @@ app.post('/api/evaluate',
         imageAnalysis: imageAnalysis,
         evaluation,
         excelFilename: excelResult.filename,
-        excelBase64: excelBase64,              // ✅ NUEVO
+        excelBase64: excelBase64,              // âœ… NUEVO
         processingTimeMs: Date.now() - startTime,
         costs
       });
 
-      logger.success('✅ Audit completed successfully', {
+      logger.success('âœ… Audit completed successfully', {
         auditId,
         totalTime: `${((Date.now() - startTime) / 1000).toFixed(2)}s`,
         totalCost: `$${costs.totalCost.toFixed(4)}`
       });
 
       // 8. Enviar progreso final
-      progressBroadcaster.progress(sseClientId, 'completed', 100, '¡Auditoría completada!');
+      progressBroadcaster.progress(sseClientId, 'completed', 100, 'Â¡AuditorÃ­a completada!');
 
       // Registrar actividad
       await databaseService.logAuditActivity(
@@ -492,7 +504,7 @@ app.post('/api/evaluate',
         req.headers['user-agent']
       );
 
-      // ✅ Limpiar archivos temporales (audio e imágenes ya no se necesitan)
+      // âœ… Limpiar archivos temporales (audio e imÃ¡genes ya no se necesitan)
       cleanupTempFiles(tempFilePaths);
 
       // Responder con el ID
@@ -505,7 +517,7 @@ app.post('/api/evaluate',
       });
 
     } catch (error: any) {
-      logger.error('❌ Error processing audit:', error);
+      logger.error('âŒ Error processing audit:', error);
 
       if (auditId) {
         await databaseService.markAuditError(auditId, error.message);
@@ -513,11 +525,11 @@ app.post('/api/evaluate',
 
       progressBroadcaster.progress(sseClientId, 'error', 0, `Error: ${error.message}`);
 
-      // ✅ Limpiar archivos temporales incluso en caso de error
+      // âœ… Limpiar archivos temporales incluso en caso de error
       cleanupTempFiles(tempFilePaths);
 
       res.status(500).json({ 
-        error: 'Error procesando auditoría', 
+        error: 'Error procesando auditorÃ­a', 
         details: error.message,
         auditId 
       });
@@ -537,7 +549,7 @@ app.delete('/api/audits/:auditId', authenticateUser, async (req: Request, res: R
 
     res.json({ 
       success: true, 
-      message: 'Auditoría eliminada exitosamente' 
+      message: 'AuditorÃ­a eliminada exitosamente' 
     });
 
   } catch (error: any) {
@@ -548,10 +560,10 @@ app.delete('/api/audits/:auditId', authenticateUser, async (req: Request, res: R
     }
 
     if (error.message.includes('no encontrada')) {
-      return res.status(404).json({ error: 'Auditoría no encontrada' });
+      return res.status(404).json({ error: 'AuditorÃ­a no encontrada' });
     }
 
-    res.status(500).json({ error: 'Error al eliminar auditoría' });
+    res.status(500).json({ error: 'Error al eliminar auditorÃ­a' });
   }
 });
 
@@ -588,7 +600,7 @@ app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request
 
     const validRoles = ['admin', 'supervisor', 'analyst'];
     if (!validRoles.includes(role)) {
-      return res.status(400).json({ error: 'Rol inválido' });
+      return res.status(400).json({ error: 'Rol invÃ¡lido' });
     }
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -603,7 +615,7 @@ app.post('/api/admin/users', authenticateUser, requireAdmin, async (req: Request
 
     if (authError) {
       logger.error('Error creating user in auth:', authError);
-      return res.status(500).json({ error: 'Error al crear usuario en autenticación' });
+      return res.status(500).json({ error: 'Error al crear usuario en autenticaciÃ³n' });
     }
 
     const { data: userData, error: dbError } = await supabaseAdmin
@@ -639,7 +651,7 @@ app.put('/api/admin/users/:userId', authenticateUser, requireAdmin, async (req: 
     if (role) {
       const validRoles = ['admin', 'supervisor', 'analyst'];
       if (!validRoles.includes(role)) {
-        return res.status(400).json({ error: 'Rol inválido' });
+        return res.status(400).json({ error: 'Rol invÃ¡lido' });
       }
     }
 
@@ -725,7 +737,7 @@ app.get('/api/admin/config', authenticateUser, requireAdmin, async (req: Request
     });
   } catch (error: any) {
     logger.error('Error fetching config:', error);
-    res.status(500).json({ error: 'Error al obtener configuración' });
+    res.status(500).json({ error: 'Error al obtener configuraciÃ³n' });
   }
 });
 
@@ -782,10 +794,10 @@ app.put('/api/admin/config', authenticateUser, requireAdmin, async (req: Request
     fs.writeFileSync(envPath, envContent.trim());
 
     logger.success('Configuration updated successfully');
-    res.json({ success: true, message: 'Configuración actualizada exitosamente' });
+    res.json({ success: true, message: 'ConfiguraciÃ³n actualizada exitosamente' });
   } catch (error: any) {
     logger.error('Error updating config:', error);
-    res.status(500).json({ error: 'Error al actualizar configuración' });
+    res.status(500).json({ error: 'Error al actualizar configuraciÃ³n' });
   }
 });
 
@@ -803,10 +815,10 @@ app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: 
           });
           
           if (response.ok) {
-            res.json({ success: true, message: 'Conexión exitosa con OpenAI' });
+            res.json({ success: true, message: 'ConexiÃ³n exitosa con OpenAI' });
           } 
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Error de conexión';
+          const errorMessage = error instanceof Error ? error.message : 'Error de conexiÃ³n';
           res.json({ success: false, error: errorMessage });
         }
         break;
@@ -820,11 +832,11 @@ app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: 
           });
           
           if (response.status === 400 || response.status === 404) {
-            res.json({ success: true, message: 'Conexión exitosa con AssemblyAI' });
+            res.json({ success: true, message: 'ConexiÃ³n exitosa con AssemblyAI' });
           } else if (response.status === 401) {
-            res.json({ success: false, error: 'API key inválida' });
+            res.json({ success: false, error: 'API key invÃ¡lida' });
           } else {
-            res.json({ success: true, message: 'Conexión exitosa con AssemblyAI' });
+            res.json({ success: true, message: 'ConexiÃ³n exitosa con AssemblyAI' });
           }
         } catch (error: any) {
           res.json({ success: false, error: error.message });
@@ -841,7 +853,7 @@ app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: 
           if (error) {
             res.json({ success: false, error: error.message });
           } else {
-            res.json({ success: true, message: 'Conexión exitosa con Supabase' });
+            res.json({ success: true, message: 'ConexiÃ³n exitosa con Supabase' });
           }
         } catch (error: any) {
           res.json({ success: false, error: error.message });
@@ -849,11 +861,11 @@ app.get('/api/admin/test/:service', authenticateUser, requireAdmin, async (req: 
         break;
 
       default:
-        res.status(400).json({ error: 'Servicio no válido' });
+        res.status(400).json({ error: 'Servicio no vÃ¡lido' });
     }
   } catch (error: any) {
     logger.error('Error testing service:', error);
-    res.status(500).json({ error: 'Error al probar conexión' });
+    res.status(500).json({ error: 'Error al probar conexiÃ³n' });
   }
 });
 
