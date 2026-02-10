@@ -1,3 +1,5 @@
+//backend/src/services/excel.service.ts
+
 import ExcelJS from 'exceljs';
 import { logger } from '../utils/logger.js';
 import type { AuditInput, EvaluationResult } from '../types/index.js';
@@ -62,208 +64,233 @@ class ExcelService {
   ) {
     const criteria = getCriteriaForCallType(auditInput.callType);
 
-    // Crear mapa de evaluaciones por tópico
+    // ✅ MEJORADO: Crear múltiples mapas para buscar coincidencias
     const evaluationMap = new Map<string, any>();
+    const evaluationByTopicOnly = new Map<string, any>();
+    const evaluationByBlockOnly = new Map<string, any>();
+    
     evaluation.detailedScores.forEach(score => {
       const match = score.criterion.match(/\[(.*?)\]\s*(.*)/);
       if (match) {
-        const block = match[1];
-        const topic = match[2];
+        const block = match[1].trim();
+        const topic = match[2].trim();
+        
+        // Mapa principal con clave completa
         const key = `${block}|${topic}`;
         evaluationMap.set(key, score);
+        
+        // Mapas secundarios para búsqueda flexible
+        evaluationByTopicOnly.set(topic, score);
+        evaluationByBlockOnly.set(block, score);
+        
+        // También guardar versiones normalizadas (sin acentos, minúsculas)
+        const normalizedKey = `${this.normalizeText(block)}|${this.normalizeText(topic)}`;
+        evaluationMap.set(normalizedKey, score);
       }
     });
 
-    // ============================================
-    // FILA 1: ENCABEZADOS DE BLOQUES (merged cells)
-    // ============================================
-    
-    const row1 = sheet.getRow(1);
-    row1.height = 25;
+    logger.info('📊 Evaluation map created', {
+      totalEvaluations: evaluation.detailedScores.length,
+      mappedKeys: Array.from(evaluationMap.keys())
+    });
 
-    const blockRanges = {
-      'Falcon':            { start: 9,  end: 15 },
-      'Front':             { start: 16, end: 22 },
-      'Vcas':              { start: 23, end: 28 },
-      'Vision':            { start: 29, end: 32 },
-      'VRM':               { start: 33, end: 34 },
-      'B.I':               { start: 35, end: 35 },
-      'Manejo de llamada': { start: 36, end: 39 }
+    // Color principal del encabezado
+    const HEADER_COLOR = 'FF2563EB';
+    const WHITE_FONT = 'FFFFFFFF';
+
+    // Estilos reutilizables
+    const headerStyle: Partial<ExcelJS.Style> = {
+      font: { bold: true, size: 10, color: { argb: WHITE_FONT } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_COLOR } },
+      alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+      border: this.getAllBorders()
     };
 
-    Object.entries(blockRanges).forEach(([blockName, range]) => {
-      const startColLetter = this.getColumnLetter(range.start);
-      const endColLetter = this.getColumnLetter(range.end);
-      
-      sheet.mergeCells(`${startColLetter}1:${endColLetter}1`);
-      const cell = sheet.getCell(`${startColLetter}1`);
-      cell.value = blockName;
-      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD92027' } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = this.getAllBorders();
-    });
+    const dataStyle: Partial<ExcelJS.Style> = {
+      font: { size: 9 },
+      alignment: { horizontal: 'left', vertical: 'middle', wrapText: true },
+      border: this.getAllBorders()
+    };
 
     // ============================================
-    // FILA 2: ENCABEZADOS DE COLUMNAS
+    // FILA 1: TÃ­tulo y Metadata
     // ============================================
+    sheet.getRow(1).height = 35;
 
-    const row2 = sheet.getRow(2);
-    row2.height = 80;
+    const cellA1 = sheet.getCell('A1');
+    cellA1.value = 'Auditoría de Llamada - Análisis Detallado';
+    cellA1.font = { bold: true, size: 16, color: { argb: HEADER_COLOR } };
+    cellA1.alignment = { horizontal: 'left', vertical: 'middle' };
+    sheet.mergeCells('A1:H1');
 
-    const allHeaders = [
-      'Folio',
-      'Nombre del Ejecutivo',
-      'ID Ejecutivo',
-      'Analista de Calidad',
-      'Fecha de Llamada',
-      'Fecha de Evaluación',
-      'Duración de la llamada',
-      'Tipo de llamada',
-      'Cierre correcto del caso',
-      'Creación y llenado correcto del caso: (creación correcto del caso, selección de casillas, calificación de transacciones, comentarios correctos)',
-      'Ingresa a HOTLIST_APROBAR / Ingresa a HOTLIST_Rechazar',
-      'Ingresa a HOTLIST_APROBAR',
-      'Ingresa a HOTLIST_Rechazar',
-      'Ingreso a HOTLIST_AVISO DE VIAJE',
-      'Califica correctamente la llamada',
-      'Codificación correcta del caso',
-      'Llenado correcto del front (caso correcto, comentarios acorde a la gestión)',
-      'Llenado correcto del front (caso correcto, comentarios acorde a la gestión, tienen afectación/ sin afectación)',
-      'Sube capturas completas',
-      'Colocar capturas completas y correctas',
-      'Subir Excel',
-      'Califica correctamente la llamada',
-      'Calificación de transacciones',
-      'Aplica Bypass',
-      'Bloquea tarjeta',
-      'Califica transacciones',
-      'Calificación de transacciones',
-      'Valida compras por facturar y cortes para identificar la compra para aclaración.\nValida que las compras no tengan una reversa',
-      'Valida pantalla OFAA y CRESP (CVV2 incorrecto, Tarjeta vencida, Fecha de vencimiento incorrecta, TJ Cancelada, etc)',
-      'Comentarios correctos en ASHI',
-      'Desbloquea tarjeta BLKI, BLKT, BPT0, BNFC',
-      'Bloqueo correcto',
-      'Valida compras en ARTD y ARSD',
-      'Calificación de transacciones, comentarios y aplica mantenimiento',
-      'Crea el Folio Correctamente',
-      'Cumple con el script',
-      'Educación, frases de conexión, comunicación efectiva y escucha activa',
-      'Control de llamada y Puntualidad',
-      'Autentica correctamente',
-      'Observaciones generales'
+    // ============================================
+    // FILA 2: Información del Ejecutivo
+    // ============================================
+    sheet.getRow(2).height = 25;
+
+    const cellA2 = sheet.getCell('A2');
+    cellA2.value = 'Ejecutivo:';
+    cellA2.font = { bold: true, size: 10 };
+    cellA2.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const cellB2 = sheet.getCell('B2');
+    cellB2.value = auditInput.executiveName;
+    cellB2.font = { size: 10 };
+    cellB2.alignment = { horizontal: 'left', vertical: 'middle' };
+    sheet.mergeCells('B2:C2');
+
+    const cellD2 = sheet.getCell('D2');
+    cellD2.value = 'ID:';
+    cellD2.font = { bold: true, size: 10 };
+    cellD2.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const cellE2 = sheet.getCell('E2');
+    cellE2.value = auditInput.executiveId;
+    cellE2.font = { size: 10 };
+    cellE2.alignment = { horizontal: 'left', vertical: 'middle' };
+
+    const cellF2 = sheet.getCell('F2');
+    cellF2.value = 'Tipo de Llamada:';
+    cellF2.font = { bold: true, size: 10 };
+    cellF2.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const cellG2 = sheet.getCell('G2');
+    cellG2.value = auditInput.callType;
+    cellG2.font = { size: 10 };
+    cellG2.alignment = { horizontal: 'left', vertical: 'middle' };
+    sheet.mergeCells('G2:H2');
+
+    // ============================================
+    // FILA 3: Resultados Generales
+    // ============================================
+    sheet.getRow(3).height = 25;
+
+    const cellA3 = sheet.getCell('A3');
+    cellA3.value = 'Puntuación Total:';
+    cellA3.font = { bold: true, size: 10 };
+    cellA3.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const cellB3 = sheet.getCell('B3');
+    cellB3.value = `${evaluation.totalScore} / ${evaluation.maxPossibleScore}`;
+    cellB3.font = { bold: true, size: 11, color: { argb: 'FF10B981' } };
+    cellB3.alignment = { horizontal: 'left', vertical: 'middle' };
+
+    const cellD3 = sheet.getCell('D3');
+    cellD3.value = 'Porcentaje:';
+    cellD3.font = { bold: true, size: 10 };
+    cellD3.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const cellE3 = sheet.getCell('E3');
+    cellE3.value = `${evaluation.percentage.toFixed(1)}%`;
+    cellE3.font = { bold: true, size: 11, color: { argb: 'FF10B981' } };
+    cellE3.alignment = { horizontal: 'left', vertical: 'middle' };
+
+    const cellF3 = sheet.getCell('F3');
+    cellF3.value = 'Cliente:';
+    cellF3.font = { bold: true, size: 10 };
+    cellF3.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const cellG3 = sheet.getCell('G3');
+    cellG3.value = auditInput.clientId || 'N/A';
+    cellG3.font = { size: 10 };
+    cellG3.alignment = { horizontal: 'left', vertical: 'middle' };
+    sheet.mergeCells('G3:H3');
+
+    // ============================================
+    // FILA 4: Encabezados de columnas principales
+    // ============================================
+    const row4 = sheet.getRow(4);
+    row4.height = 30;
+
+    // Columnas de metadata
+    const headers = [
+      { col: 1, label: '#', width: 8 },
+      { col: 2, label: 'Bloque', width: 30 },
+      { col: 3, label: 'Criticidad', width: 12 },
+      { col: 4, label: 'Criterio', width: 25 },
+      { col: 5, label: 'Puntaje Máximo', width: 18 },
+      { col: 6, label: 'Puntaje Obtenido', width: 18 },
+      { col: 7, label: 'Aplica', width: 12 },
+      { col: 8, label: 'Observaciones', width: 40 }
     ];
 
-    allHeaders.forEach((header, idx) => {
-      const cell = row2.getCell(idx + 1);
-      cell.value = header;
-      cell.font = { bold: true, size: 9 };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7E6E6' } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-      cell.border = this.getAllBorders();
+    headers.forEach(h => {
+      const cell = row4.getCell(h.col);
+      cell.value = h.label;
+      Object.assign(cell, headerStyle);
+      sheet.getColumn(h.col).width = h.width;
     });
 
-    // ============================================
-    // FILA 3: PONDERACIÓN (Crítico o puntos)
-    // ============================================
-
-    const row3 = sheet.getRow(3);
-    row3.height = 20;
-
-    for (let i = 1; i <= 8; i++) {
-      const cell = row3.getCell(i);
-      cell.value = '';
-      cell.border = this.getAllBorders();
-    }
-
+    // Encabezados de tópicos (columnas 9-39)
     let colNum = 9;
     criteria.forEach(block => {
       block.topics.forEach(topic => {
-        const cell = row3.getCell(colNum);
-        
-        if (!topic.applies) {
-          cell.value = 'n/a';
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
-          cell.font = { size: 9, color: { argb: 'FF666666' } };
-        } else if (topic.criticality === 'Crítico') {
-          cell.value = 'Crítico';
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } };
-          cell.font = { size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
-        } else {
-          cell.value = topic.points;
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCCCCC' } };
-          cell.font = { size: 9 };
-        }
-        
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border = this.getAllBorders();
+        const cell = row4.getCell(colNum);
+        cell.value = `${block.blockName}: ${topic.topic}`;
+        Object.assign(cell, headerStyle);
         colNum++;
       });
     });
 
-    const obsHeaderCell = row3.getCell(40);
-    obsHeaderCell.value = '';
-    obsHeaderCell.border = this.getAllBorders();
+    // Columna 40: Observaciones generales
+    const cell40 = row4.getCell(40);
+    cell40.value = 'Observaciones Generales';
+    Object.assign(cell40, headerStyle);
 
     // ============================================
-    // FILA 4: DATOS Y CALIFICACIONES
+    // FILAS DE DATOS: Iterar criterios horizontalmente
     // ============================================
+    let rowNum = 5;
+    let topicIndex = 1;
 
-    const row4 = sheet.getRow(4);
-    row4.height = 25;
-
-    const infoCell1 = row4.getCell(1);
-    infoCell1.value = '';
-    infoCell1.alignment = { horizontal: 'center', vertical: 'middle' };
-    infoCell1.border = this.getAllBorders();
-
-    const infoCell2 = row4.getCell(2);
-    infoCell2.value = auditInput.executiveName;
-    infoCell2.alignment = { horizontal: 'left', vertical: 'middle' };
-    infoCell2.border = this.getAllBorders();
-
-    const infoCell3 = row4.getCell(3);
-    infoCell3.value = auditInput.executiveId;
-    infoCell3.alignment = { horizontal: 'center', vertical: 'middle' };
-    infoCell3.border = this.getAllBorders();
-
-    const infoCell4 = row4.getCell(4);
-    infoCell4.value = 'IA';
-    infoCell4.alignment = { horizontal: 'left', vertical: 'middle' };
-    infoCell4.border = this.getAllBorders();
-
-    const infoCell5 = row4.getCell(5);
-    infoCell5.value = auditInput.callDate;
-    infoCell5.alignment = { horizontal: 'center', vertical: 'middle' };
-    infoCell5.border = this.getAllBorders();
-
-    const infoCell6 = row4.getCell(6);
-    infoCell6.value = new Date().toLocaleDateString('es-MX');
-    infoCell6.alignment = { horizontal: 'center', vertical: 'middle' };
-    infoCell6.border = this.getAllBorders();
-
-    const infoCell7 = row4.getCell(7);
-    infoCell7.value = this.formatDuration(auditInput.callDuration ?? undefined);
-    infoCell7.alignment = { horizontal: 'center', vertical: 'middle' };
-    infoCell7.border = this.getAllBorders();
-
-    const infoCell8 = row4.getCell(8);
-    infoCell8.value = auditInput.callType;
-    infoCell8.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-    infoCell8.border = this.getAllBorders();
-
-    // ============================================
-    // HELPER: Obtener valor + justificación REAL
-    // ============================================
+    // ✅ MEJORADO: Helper para buscar evaluación con múltiples estrategias
     const getTopicValueWithReason = (blockName: string, topicName: string, topic: any) => {
       if (!topic.applies) {
-        return { value: 'n/a', reason: 'No aplica para este tipo de llamada', shouldHighlight: false };
+        return { 
+          value: 'n/a', 
+          reason: 'No aplica según el contexto de la llamada', 
+          shouldHighlight: false 
+        };
       }
 
-      const key = `${blockName}|${topicName}`;
-      const score = evaluationMap.get(key);
+      // Estrategia 1: Búsqueda exacta
+      let key = `${blockName}|${topicName}`;
+      let score = evaluationMap.get(key);
+
+      // Estrategia 2: Búsqueda normalizada (sin acentos, minúsculas)
+      if (!score) {
+        key = `${this.normalizeText(blockName)}|${this.normalizeText(topicName)}`;
+        score = evaluationMap.get(key);
+      }
+
+      // Estrategia 3: Búsqueda solo por tópico
+      if (!score) {
+        score = evaluationByTopicOnly.get(topicName);
+      }
+
+      // Estrategia 4: Búsqueda solo por bloque
+      if (!score) {
+        score = evaluationByBlockOnly.get(blockName);
+      }
+
+      // Estrategia 5: Búsqueda parcial (contiene)
+      if (!score) {
+        const normalizedTopic = this.normalizeText(topicName);
+        for (const [mapKey, mapScore] of evaluationMap.entries()) {
+          const normalizedMapKey = this.normalizeText(mapKey);
+          if (normalizedMapKey.includes(normalizedTopic) || normalizedTopic.includes(normalizedMapKey)) {
+            score = mapScore;
+            break;
+          }
+        }
+      }
 
       if (!score) {
+        logger.warn('⚠️ No evaluation found for criterion', { 
+          blockName, 
+          topicName,
+          availableKeys: Array.from(evaluationMap.keys()).slice(0, 5)
+        });
         return { 
           value: 'Sin evaluar', 
           reason: 'No se encontró evidencia suficiente en transcripción ni en capturas para evaluar este criterio', 
@@ -288,11 +315,91 @@ class ExcelService {
       };
     };
 
-    // Columnas 9-39: Calificaciones de cada tópico
+    criteria.forEach(block => {
+      block.topics.forEach(topic => {
+        const row = sheet.getRow(rowNum);
+        row.height = 25;
+
+        // Columna 1: Índice
+        const cellA = row.getCell(1);
+        cellA.value = topicIndex;
+        cellA.alignment = { horizontal: 'center', vertical: 'middle' };
+        cellA.border = this.getAllBorders();
+
+        // Columna 2: Bloque
+        const cellB = row.getCell(2);
+        cellB.value = block.blockName;
+        cellB.font = { bold: true, size: 9 };
+        Object.assign(cellB, dataStyle);
+
+        // Columna 3: Criticidad
+        const cellC = row.getCell(3);
+        cellC.value = topic.criticality || '-';
+        cellC.alignment = { horizontal: 'center', vertical: 'middle' };
+        cellC.border = this.getAllBorders();
+        if (topic.criticality === 'Crítico') {
+          cellC.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFECACA' } };
+          cellC.font = { bold: true, size: 9, color: { argb: 'FFDC2626' } };
+        }
+
+        // Columna 4: Criterio
+        const cellD = row.getCell(4);
+        cellD.value = topic.topic;
+        Object.assign(cellD, dataStyle);
+
+        // Columna 5: Puntaje Máximo
+        const cellE = row.getCell(5);
+        cellE.value = topic.points;
+        cellE.alignment = { horizontal: 'center', vertical: 'middle' };
+        cellE.border = this.getAllBorders();
+
+        // Columna 6: Puntaje Obtenido + Observaciones
+        const result = getTopicValueWithReason(block.blockName, topic.topic, topic);
+        const cellF = row.getCell(6);
+        cellF.value = result.value;
+        cellF.alignment = { horizontal: 'center', vertical: 'middle' };
+        cellF.border = this.getAllBorders();
+
+        if (result.shouldHighlight) {
+          if (typeof result.value === 'number') {
+            const maxPoints = typeof topic.points === 'number' ? topic.points : 0;
+            if (result.value === maxPoints) {
+              cellF.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+              cellF.font = { bold: true, size: 10, color: { argb: 'FF155724' } };
+            } else if (result.value === 0) {
+              cellF.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8D7DA' } };
+              cellF.font = { bold: true, size: 10, color: { argb: 'FF721C24' } };
+            } else {
+              cellF.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
+              cellF.font = { bold: true, size: 10, color: { argb: 'FF856404' } };
+            }
+          }
+        } else if (result.value === 'n/a') {
+          cellF.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+          cellF.font = { size: 9, color: { argb: 'FF666666' } };
+        }
+
+        // Columna 7: Aplica
+        const cellG = row.getCell(7);
+        cellG.value = topic.applies ? 'Sí' : 'No';
+        cellG.alignment = { horizontal: 'center', vertical: 'middle' };
+        cellG.border = this.getAllBorders();
+
+        // Columna 8: Observaciones
+        const cellH = row.getCell(8);
+        cellH.value = result.reason;
+        Object.assign(cellH, dataStyle);
+
+        rowNum++;
+        topicIndex++;
+      });
+    });
+
+    // Columnas 9-39: Calificaciones de cada tópico (vista matricial)
     colNum = 9;
     criteria.forEach(block => {
       block.topics.forEach(topic => {
-        const cell = row4.getCell(colNum);
+        const cell = sheet.getRow(5).getCell(colNum);
         const result = getTopicValueWithReason(block.blockName, topic.topic, topic);
         
         cell.value = result.value;
@@ -340,8 +447,8 @@ class ExcelService {
       });
     });
 
-    // Columna 40: Observaciones
-    const obsCell = row4.getCell(40);
+    // Columna 40: Observaciones generales
+    const obsCell = sheet.getRow(5).getCell(40);
     
     let observationsText = evaluation.observations;
     
@@ -358,29 +465,15 @@ class ExcelService {
     obsCell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
     obsCell.border = this.getAllBorders();
 
-    // ============================================
-    // AJUSTAR ANCHOS DE COLUMNAS
-    // ============================================
-
-    sheet.getColumn(1).width = 8;
-    sheet.getColumn(2).width = 30;
-    sheet.getColumn(3).width = 12;
-    sheet.getColumn(4).width = 25;
-    sheet.getColumn(5).width = 18;
-    sheet.getColumn(6).width = 18;
-    sheet.getColumn(7).width = 12;
-    sheet.getColumn(8).width = 40;
-
+    // Ajustar anchos finales
+    sheet.getColumn(40).width = 50;
     for (let i = 9; i <= 39; i++) {
       sheet.getColumn(i).width = 15;
     }
-
-    sheet.getColumn(40).width = 50;
   }
 
   // ============================================
-  // HOJA MONITOREO (vertical) - NUEVO
-  // Estructura basada en Monitoreo.xlsx
+  // HOJA MONITOREO (vertical)
   // ============================================
 
   private createMonitoreoSheet(
@@ -390,16 +483,34 @@ class ExcelService {
   ) {
     const criteria = getCriteriaForCallType(auditInput.callType);
 
-    // Crear mapa de evaluaciones por tópico
+    // ✅ MEJORADO: Crear múltiples mapas para buscar coincidencias
     const evaluationMap = new Map<string, any>();
+    const evaluationByTopicOnly = new Map<string, any>();
+    const evaluationByBlockOnly = new Map<string, any>();
+    
     evaluation.detailedScores.forEach(score => {
       const match = score.criterion.match(/\[(.*?)\]\s*(.*)/);
       if (match) {
-        const block = match[1];
-        const topic = match[2];
+        const block = match[1].trim();
+        const topic = match[2].trim();
+        
+        // Mapa principal con clave completa
         const key = `${block}|${topic}`;
         evaluationMap.set(key, score);
+        
+        // Mapas secundarios para búsqueda flexible
+        evaluationByTopicOnly.set(topic, score);
+        evaluationByBlockOnly.set(block, score);
+        
+        // También guardar versiones normalizadas
+        const normalizedKey = `${this.normalizeText(block)}|${this.normalizeText(topic)}`;
+        evaluationMap.set(normalizedKey, score);
       }
+    });
+
+    logger.info('📊 Monitoreo evaluation map created', {
+      totalEvaluations: evaluation.detailedScores.length,
+      mappedKeys: Array.from(evaluationMap.keys())
     });
 
     // Color principal del encabezado (rojo rosado como en Monitoreo.xlsx: #B42648)
@@ -410,18 +521,6 @@ class ExcelService {
     const headerStyle: Partial<ExcelJS.Style> = {
       font: { bold: true, size: 11, color: { argb: WHITE_FONT } },
       fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_COLOR } },
-      alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
-      border: this.getAllBorders()
-    };
-
-    const dataStyleLeft: Partial<ExcelJS.Style> = {
-      font: { size: 10 },
-      alignment: { horizontal: 'left', vertical: 'middle', wrapText: true },
-      border: this.getAllBorders()
-    };
-
-    const dataStyleCenter: Partial<ExcelJS.Style> = {
-      font: { size: 10 },
       alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
       border: this.getAllBorders()
     };
@@ -477,16 +576,50 @@ class ExcelService {
     // ============================================
     let currentRow = 4;
 
-    // Helper para obtener valor evaluado
+    // ✅ MEJORADO: Helper para buscar evaluación con múltiples estrategias
     const getTopicResult = (blockName: string, topicName: string, topic: any) => {
       if (!topic.applies) {
         return { value: 'n/a', reason: 'No aplica', isCritical: false };
       }
 
-      const key = `${blockName}|${topicName}`;
-      const score = evaluationMap.get(key);
+      // Estrategia 1: Búsqueda exacta
+      let key = `${blockName}|${topicName}`;
+      let score = evaluationMap.get(key);
+
+      // Estrategia 2: Búsqueda normalizada
+      if (!score) {
+        key = `${this.normalizeText(blockName)}|${this.normalizeText(topicName)}`;
+        score = evaluationMap.get(key);
+      }
+
+      // Estrategia 3: Búsqueda solo por tópico
+      if (!score) {
+        score = evaluationByTopicOnly.get(topicName);
+      }
+
+      // Estrategia 4: Búsqueda solo por bloque
+      if (!score) {
+        score = evaluationByBlockOnly.get(blockName);
+      }
+
+      // Estrategia 5: Búsqueda parcial
+      if (!score) {
+        const normalizedTopic = this.normalizeText(topicName);
+        for (const [mapKey, mapScore] of evaluationMap.entries()) {
+          const normalizedMapKey = this.normalizeText(mapKey);
+          if (normalizedMapKey.includes(normalizedTopic) || normalizedTopic.includes(normalizedMapKey)) {
+            score = mapScore;
+            break;
+          }
+        }
+      }
 
       if (!score) {
+        logger.warn('⚠️ No evaluation found for criterion', { 
+          blockName, 
+          topicName,
+          availableKeys: Array.from(evaluationMap.keys()).slice(0, 5)
+        });
         return { 
           value: 'Sin evaluar', 
           reason: 'No se encontró evidencia suficiente', 
@@ -543,8 +676,8 @@ class ExcelService {
         const result = getTopicResult(block.blockName, topic.topic, topic);
 
         if (topic.criticality === 'Crítico') {
-          // Críticos: mostrar "Crítico" como ponderación y resultado en nota
-          cellD.value = 'Crítico';
+          // Críticos: mostrar resultado directamente
+          cellD.value = result.value;
           cellD.font = { size: 10, bold: true };
           cellD.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
           cellD.border = this.getAllBorders();
@@ -556,6 +689,9 @@ class ExcelService {
           } else if (result.value === 'Cumple') {
             cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } };
             cellD.font = { size: 10, bold: true, color: { argb: WHITE_FONT } };
+          } else if (result.value === 'Sin evaluar') {
+            cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+            cellD.font = { size: 9, italic: true, color: { argb: 'FF666666' } };
           }
         } else if (!topic.applies) {
           cellD.value = 'n/a';
@@ -584,6 +720,9 @@ class ExcelService {
               cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
               cellD.font = { size: 10, bold: true, color: { argb: 'FF856404' } };
             }
+          } else if (result.value === 'Sin evaluar') {
+            cellD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+            cellD.font = { size: 9, italic: true, color: { argb: 'FF666666' } };
           }
         }
 
@@ -705,75 +844,40 @@ class ExcelService {
   }
 
   // ============================================
-  // HELPERS COMPARTIDOS
+  // HELPERS
   // ============================================
 
-  private formatDuration(duration?: string): string {
-    if (!duration) return 'N/A';
-    
-    const parts = duration.split(':');
-    
-    if (parts.length === 3) {
-      const hours = parseInt(parts[0]) || 0;
-      const minutes = parseInt(parts[1]) || 0;
-      const seconds = parseInt(parts[2]) || 0;
-      
-      const totalMinutes = hours * 60 + minutes;
-      return `${totalMinutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    } else if (parts.length === 2) {
-      return duration;
-    }
-    
-    return duration;
+  /**
+   * ✅ NUEVO: Normaliza texto para comparaciones flexibles
+   * Remueve acentos, convierte a minúsculas, elimina espacios extras
+   */
+  private normalizeText(text: string): string {
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private getAllBorders(): Partial<ExcelJS.Borders> {
+    return {
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+      right: { style: 'thin', color: { argb: 'FF000000' } }
+    };
   }
 
   private formatTimestamp(timestamp: string): string {
     if (!timestamp) return '00:00';
     
-    if (/^\d{2}:\d{2}$/.test(timestamp)) {
-      return timestamp;
-    }
+    const match = timestamp.match(/(\d+):(\d+)/);
+    if (!match) return timestamp;
     
-    if (/^\d{2}:\d{2}:\d{2}$/.test(timestamp)) {
-      const parts = timestamp.split(':');
-      const hours = parseInt(parts[0]) || 0;
-      const minutes = parseInt(parts[1]) || 0;
-      const seconds = parseInt(parts[2]) || 0;
-      
-      const totalMinutes = hours * 60 + minutes;
-      return `${totalMinutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-    
-    const totalSeconds = parseInt(timestamp);
-    if (!isNaN(totalSeconds)) {
-      const mins = Math.floor(totalSeconds / 60);
-      const secs = totalSeconds % 60;
-      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    
-    return timestamp;
-  }
-
-  private getColumnLetter(colNumber: number): string {
-    let letter = '';
-    let temp = colNumber;
-    
-    while (temp > 0) {
-      const remainder = (temp - 1) % 26;
-      letter = String.fromCharCode(65 + remainder) + letter;
-      temp = Math.floor((temp - 1) / 26);
-    }
-    
-    return letter;
-  }
-
-  private getAllBorders() {
-    return {
-      top: { style: 'thin' as const, color: { argb: 'FF000000' } },
-      left: { style: 'thin' as const, color: { argb: 'FF000000' } },
-      bottom: { style: 'thin' as const, color: { argb: 'FF000000' } },
-      right: { style: 'thin' as const, color: { argb: 'FF000000' } }
-    };
+    const mins = match[1].padStart(2, '0');
+    const secs = match[2].padStart(2, '0');
+    return `${mins}:${secs}`;
   }
 }
 
